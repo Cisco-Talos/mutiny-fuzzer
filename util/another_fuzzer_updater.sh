@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/bin/bash
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -29,47 +29,18 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-# This file has the custom exceptions that can be raised during fuzzing
-#------------------------------------------------------------------
+# Turns 'messageascii 0/1' format messages -> inbound/outbound
+#
+#
 
-# Raise this to log and continue on
-class LogCrashException(Exception):
-    pass
+inpfile=$1
 
-# Raise this to indicate the current test shouldn't continue, skip to next
-class AbortCurrentRunException(Exception):
-    pass
+if [ -z inpfile ]; then
+    echo "Usage: $0 <old_fuzzer>"
+    exit 1
+fi
 
-# Raise this to indicate that the current test should be re-run
-# (Same as AbortCurrentRun, but will re-try current test)
-class RetryCurrentRunException(Exception):
-    pass
-
-# Raise this to log, just like LogCrashException, except 
-# stop testing entirely afterwards
-class LogAndHaltException(Exception):
-    pass
-
-# Raise this to log the previous run and stop testing completely
-# Primarily used if daemon gives connection refused
-# Assumes that previous run caused a crash
-class LogLastAndHaltException(Exception):
-    pass
-
-# Raise this to simply abort testing altogether
-class HaltException(Exception):
-    pass
-
-# For fuzzing campaigns, where we want to log, sleep, and continue
-class LogSleepGoException(Exception):
-    pass
-
-
-# List of exceptions that can be thrown by a MessageProcessor
-class MessageProcessorExceptions(object):
-    all = [LogCrashException, AbortCurrentRunException, RetryCurrentRunException, LogAndHaltException, LogLastAndHaltException, HaltException, LogSleepGoException]
-
-# This is raised by the fuzzer when the server has closed the connection gracefully
-class ConnectionClosedException(Exception):
-    pass
-
+cp $1 $1.old
+sed -i 's/messageascii 1/inbound/g' $1 
+sed -i 's/messageascii/outbound/g' $1 
+sed -i 's/ 0 / /g' $1 

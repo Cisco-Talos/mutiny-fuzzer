@@ -29,47 +29,41 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-# This file has the custom exceptions that can be raised during fuzzing
+# Update .fuzzer files from old version to new version. 
+# More than likely, you won't need to use this, as the old version
+# was removed before release. 
 #------------------------------------------------------------------
+import os.path
+import sys
+import re
 
-# Raise this to log and continue on
-class LogCrashException(Exception):
-    pass
+# Kind of dirty, grab libs from one directory up
+sys.path.insert(0, os.path.abspath( os.path.join(__file__, "../..")))
+from backend.fuzzerdata import FuzzerData
+from backend.fuzzer_types import Message
 
-# Raise this to indicate the current test shouldn't continue, skip to next
-class AbortCurrentRunException(Exception):
-    pass
+def main():
 
-# Raise this to indicate that the current test should be re-run
-# (Same as AbortCurrentRun, but will re-try current test)
-class RetryCurrentRunException(Exception):
-    pass
+    try:
+        fuzz_data = FuzzerData()
+        old_fuzzer = sys.argv[-1] 
+        new_fuzzer = old_fuzzer + ".new"
+    except Exception as e:
+        usage()
 
-# Raise this to log, just like LogCrashException, except 
-# stop testing entirely afterwards
-class LogAndHaltException(Exception):
-    pass
+    try:
+        print "[>_>] Attempting to read: %s, writing to %s"%(old_fuzzer,new_fuzzer)
+        fuzz_data.readFromFile(old_fuzzer)
+        fuzz_data.writeToFile(new_fuzzer)
+        print "[^_^] All done!"
+    except Exception as e:
+        print "[x_x] %s" % str(e)
 
-# Raise this to log the previous run and stop testing completely
-# Primarily used if daemon gives connection refused
-# Assumes that previous run caused a crash
-class LogLastAndHaltException(Exception):
-    pass
+def usage():
+    print "Usage: python legacy_fuzzer_update.py <input_file>"
+    sys.exit()
 
-# Raise this to simply abort testing altogether
-class HaltException(Exception):
-    pass
+if __name__ == "__main__":
+    main()
 
-# For fuzzing campaigns, where we want to log, sleep, and continue
-class LogSleepGoException(Exception):
-    pass
-
-
-# List of exceptions that can be thrown by a MessageProcessor
-class MessageProcessorExceptions(object):
-    all = [LogCrashException, AbortCurrentRunException, RetryCurrentRunException, LogAndHaltException, LogLastAndHaltException, HaltException, LogSleepGoException]
-
-# This is raised by the fuzzer when the server has closed the connection gracefully
-class ConnectionClosedException(Exception):
-    pass
 

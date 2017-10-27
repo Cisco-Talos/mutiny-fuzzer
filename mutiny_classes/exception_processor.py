@@ -29,14 +29,13 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-#
 # This file handles all custom errors that are raised
 # Copy this file to your project's mutiny classes directory to
 # change exception handling
 # This is useful for telling Mutiny how to interpret the server
 # closing a connection, and so on
-#
 #------------------------------------------------------------------
+
 
 import errno
 import socket
@@ -55,7 +54,8 @@ class ExceptionProcessor(object):
         if isinstance(exception, socket.error):
             if exception.errno == errno.ECONNREFUSED:
                 # Default to assuming this means server is crashed so we're done
-                raise LogLastAndHaltException("Connection refused: Assuming we crashed the server, logging previous run and halting")
+                # raise LogLastAndHaltException("Connection refused: Assuming we crashed the server, logging previous run and halting")
+                raise LogSleepGoException("Connection refused, Logging last, sleeping, and continuting")
             elif "timed out" in str(exception):
                 raise AbortCurrentRunException("Server closed the connection")
             else:

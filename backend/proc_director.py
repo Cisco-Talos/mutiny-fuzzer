@@ -29,13 +29,11 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-#
 # This file finds and imports any custom exception_processor.py, 
 # message_processor.py, or monitor.py files specified by the 
 # processor_dir parameter passed in the .fuzzer file generated
 # by the mutiny_prep.py file.
 # It also spawns any Monitors in a parallel thread
-#
 #------------------------------------------------------------------
 
 import imp
@@ -49,7 +47,7 @@ from threading import Event
 from mutiny_classes.mutiny_exceptions import MessageProcessorExceptions
 
 class ProcDirector(object):
-    def __init__(self, processDir):
+    def __init__(self, processDir,fuzzerFile):
         self.messageProcessor = None
         self.exceptionProcessor = None
         self.exceptionList = None
@@ -57,9 +55,22 @@ class ProcDirector(object):
         mod_name = ""  
         self.classDir = "mutiny_classes"
         
-        defaultDir = os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir),self.classDir)
-        filelist = [ "exception_processor","message_processor","monitor" ]
+        baseDir = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir)
+        defaultDir = os.path.join(baseDir,self.classDir)
+        fuzzerLoc = os.path.join(baseDir,fuzzerFile)
+
+        filelist = [ "exception_processor","monitor", "message_processor" ]
         
+        # First try to load the message processor from the fuzzer itself, and then
+        # if that fails, go through the old methods
+        try: 
+            imp.load_source("message_processor",fuzzerLoc)
+            print("Loaded message processor: {0}".format(fuzzerLoc))
+            filelist.remove("message_processor") 
+            os.remove(fuzzerLoc + "c")
+        except:
+            pass
+
         # Load all processors, attempting to do custom first then default
         for filename in filelist:
             try:
@@ -102,3 +113,7 @@ class ProcDirector(object):
         self.monitorWrapper = self.MonitorWrapper(host, port, self.monitor())
         return self.monitorWrapper
         
+    def getMonitor(self,host,port):
+        mon = self.monitor()
+        mon.crashEvent = threading.Event()
+        return mon

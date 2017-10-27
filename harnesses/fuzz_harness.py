@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -29,47 +29,58 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-# This file has the custom exceptions that can be raised during fuzzing
-#------------------------------------------------------------------
+import subprocess
+from time import sleep
+import socket
+import sys
 
-# Raise this to log and continue on
-class LogCrashException(Exception):
-    pass
+fuzzer_ip = "127.0.0.1"
+fuzzer_port = 6969
 
-# Raise this to indicate the current test shouldn't continue, skip to next
-class AbortCurrentRunException(Exception):
-    pass
+def main(log):
+    connected = False  
+    while not connected:
+        try:
+            fuzzer_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            fuzzer_sock.connect((fuzzer_ip,fuzzer_port))
+            connected = True
+        except:
+            msg = "[x.x] No comms with fuzz harness, sleeping. (%s:%d)"%(fuzzer_ip,fuzzer_port)
+            print msg
+            fuzzer_sock = None
+            sleep(1)
+            sys.stdout.write("\b"*(len(msg)+1))
+            sys.stdout.flush()
 
-# Raise this to indicate that the current test should be re-run
-# (Same as AbortCurrentRun, but will re-try current test)
-class RetryCurrentRunException(Exception):
-    pass
+    try:
+        while True:
+            cmd = ["gdb","-x","harness_cmds.txt","--args"] 
+            cmd = cmd + sys.argv[1:]
+            print cmd
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT) 
+            resp,err = proc.communicate()
+            print resp
+              
+            if "SIGSEGV" in resp:
+                print "[^_^] got sometin!"
+                if fuzzer_sock:
+                    fuzzer_sock.send(resp)
+                log.write(resp)
+                log.write("\n****************\n"*5)
 
-# Raise this to log, just like LogCrashException, except 
-# stop testing entirely afterwards
-class LogAndHaltException(Exception):
-    pass
-
-# Raise this to log the previous run and stop testing completely
-# Primarily used if daemon gives connection refused
-# Assumes that previous run caused a crash
-class LogLastAndHaltException(Exception):
-    pass
-
-# Raise this to simply abort testing altogether
-class HaltException(Exception):
-    pass
-
-# For fuzzing campaigns, where we want to log, sleep, and continue
-class LogSleepGoException(Exception):
-    pass
+    except KeyboardInterrupt:
+        import traceback
+        print traceback.print_exc()
+        return
+    except Exception as e:
+        print e
 
 
-# List of exceptions that can be thrown by a MessageProcessor
-class MessageProcessorExceptions(object):
-    all = [LogCrashException, AbortCurrentRunException, RetryCurrentRunException, LogAndHaltException, LogLastAndHaltException, HaltException, LogSleepGoException]
+with open('log.txt','a') as log:
 
-# This is raised by the fuzzer when the server has closed the connection gracefully
-class ConnectionClosedException(Exception):
-    pass
+    if len(sys.argv) < 2:
+        print "[x.x] Usage: %s <target_proc_name>"%sys.argv[0]
+        sys.exit()
+
+    main(log) 
 

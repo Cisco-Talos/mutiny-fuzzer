@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -29,12 +28,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-#
-# Definitions for l2/l3 packet handling
-#
-#------------------------------------------------------------------
-
-
 from ctypes import *
 ### L2 ###
 class ETH(Structure):

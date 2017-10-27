@@ -29,47 +29,54 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-# This file has the custom exceptions that can be raised during fuzzing
+# This is used in the exploit generation feature ('-x' switch)
+# of Mutiny. Change it if you want a different base exploit.
+# Or not, w/e. (>_>) 
 #------------------------------------------------------------------
+import socket
+import struct
+import sys
 
-# Raise this to log and continue on
-class LogCrashException(Exception):
-    pass
+IP = "%s"
+PORT = %d
+timeout = .3
+strLen = 200
 
-# Raise this to indicate the current test shouldn't continue, skip to next
-class AbortCurrentRunException(Exception):
-    pass
+# each entry in packet list should be:
+# (0, msg) or (1,msg) for the direction
+packet_list = %s
 
-# Raise this to indicate that the current test should be re-run
-# (Same as AbortCurrentRun, but will re-try current test)
-class RetryCurrentRunException(Exception):
-    pass
+def main():
+    tmp = ""
 
-# Raise this to log, just like LogCrashException, except 
-# stop testing entirely afterwards
-class LogAndHaltException(Exception):
-    pass
+    try:
+        sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        sock.connect((IP,PORT))
+        sock.settimeout(timeout)
+    except:
+        print "[x.x] No connect to " + IP +":" + str(PORT) 
 
-# Raise this to log the previous run and stop testing completely
-# Primarily used if daemon gives connection refused
-# Assumes that previous run caused a crash
-class LogLastAndHaltException(Exception):
-    pass
+        sys.exit()
+    
+    count = 0
+    for direction,packet in packet_list:
+        #print "\033[96mDirection:" + str(inbound) + ",Packet#:" + str(count) + "\033[00m - " + repr(packet)
+        count+=1
+        if direction == "inbound": 
+            tmp = sock.recv(65535)
+            if tmp:
+                try:
+                    print "[<.<] " + repr(tmp[0:strLen])
+                except:
+                    print "[<.<] " + repr(tmp)
+                if len(tmp) > strLen: 
+                    print "[...]"
+        elif direction == "outbound": 
+            print "[>.>] " + repr(packet) 
+            if len(packet) > strLen: 
+                print "[...]"
+            sock.send(packet)
+            
 
-# Raise this to simply abort testing altogether
-class HaltException(Exception):
-    pass
-
-# For fuzzing campaigns, where we want to log, sleep, and continue
-class LogSleepGoException(Exception):
-    pass
-
-
-# List of exceptions that can be thrown by a MessageProcessor
-class MessageProcessorExceptions(object):
-    all = [LogCrashException, AbortCurrentRunException, RetryCurrentRunException, LogAndHaltException, LogLastAndHaltException, HaltException, LogSleepGoException]
-
-# This is raised by the fuzzer when the server has closed the connection gracefully
-class ConnectionClosedException(Exception):
-    pass
-
+if __name__ == "__main__":
+    main()

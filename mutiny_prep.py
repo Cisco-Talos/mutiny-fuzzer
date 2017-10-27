@@ -1,15 +1,35 @@
 #!/usr/bin/env python
 #------------------------------------------------------------------
-# Prep traffic log for fuzzing
-#
-# Cisco Confidential
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
-# Contributor Lilith Wyatt (liwyatt)
-#
-# Copyright (c) 2014-2015 by Cisco Systems, Inc.
+# Co-Author Lilith Wyatt (liwyatt)
+#------------------------------------------------------------------
+# Copyright (c) 2014-2017 by Cisco Systems, Inc.
 # All rights reserved.
 #
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+# 3. Neither the name of the Cisco Systems, Inc. nor the
+#    names of its contributors may be used to endorse or promote products
+#    derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#------------------------------------------------------------------
+# Prep traffic log for fuzzing
 # This script takes pcap or c_arrays output from Wireshark and 
 # processes it into a .fuzzer file for use with mutiny.py
 #------------------------------------------------------------------
@@ -149,14 +169,14 @@ with open(inputFilePath, 'r') as inputFile:
                             isCombiningPackets = True
                         askedToCombinePackets = True
                     if isCombiningPackets:
-                        message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
+                        message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), attributes="")
                         print "\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction)
                         continue
                 # Either direction isn't the same or we're not combining packets
                 message = Message()
                 message.direction = newMessageDirection
                 lastMessageDirection = newMessageDirection
-                message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
+                message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), attributes="")
                 fuzzerData.messageCollection.addMessage(message)
                 j += 1
                 print "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction)
@@ -230,13 +250,13 @@ with open(inputFilePath, 'r') as inputFile:
                         messageArray = tempMessageData.replace(",", "").replace("0x", "").split()
                         
                         if state == STATE_READING_MESSAGE:
-                            message.setMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), False)
+                            message.appendMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), attributes="")
                             fuzzerData.messageCollection.addMessage(message)
                             print "\tMessage #%d - Processed %d bytes %s" % (i, len(messageArray), message.direction)
                         elif state == STATE_COMBINING_PACKETS:
                             # Append new data to last message
                             i -= 1
-                            message.appendMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), False, createNewSubcomponent=False)
+                            message.appendMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), attributes="", createNewSubcomponent=False)
                             print "\tMessage #%d - Added %d new bytes %s" % (i, len(messageArray), message.direction)
                         if args.dump_ascii:
                             print "\tAscii: %s" % (str(message.getOriginalMessage()))
@@ -304,10 +324,8 @@ def promptAndOutput(outputMessageNum, autogenerateAllClient=False):
     # Any messages previously marked for fuzzing, unmark first
     # Inefficient as can be, but who cares
     for message in fuzzerData.messageCollection.messages:
-        if message.isFuzzed:
-            message.isFuzzed = False
-            for subcomponent in message.subcomponents:
-                subcomponent.isFuzzed = False
+        for subcomponent in message.subcomponents:
+            subcomponent.isFuzzed = False
     
     if not autogenerateAllClient:
         while True:
@@ -315,13 +333,11 @@ def promptAndOutput(outputMessageNum, autogenerateAllClient=False):
             if len(tmp) > 0:
                 outputFilenameEnd = tmp
                 for messageIndex in validateNumberRange(tmp, flattenList=True):
-                    fuzzerData.messageCollection.messages[messageIndex].isFuzzed = True
                     for subcomponent in fuzzerData.messageCollection.messages[messageIndex].subcomponents:
                         subcomponent.isFuzzed = True
                 break
     else:
         outputFilenameEnd = str(outputMessageNum)
-        fuzzerData.messageCollection.messages[outputMessageNum].isFuzzed = True
         for subcomponent in fuzzerData.messageCollection.messages[outputMessageNum].subcomponents:
             subcomponent.isFuzzed = True
 

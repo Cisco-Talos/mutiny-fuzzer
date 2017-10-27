@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/bin/sh
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -29,47 +29,40 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-# This file has the custom exceptions that can be raised during fuzzing
-#------------------------------------------------------------------
 
-# Raise this to log and continue on
-class LogCrashException(Exception):
-    pass
+target=$1
+fuzzing_host=$2
+if [ -z "$target" ] || [ -z "$fuzzing_host" ]; then
+    echo "Usage: $0 <target_process_name> <fuzzing_host_IP>"
+    exit
+fi
 
-# Raise this to indicate the current test shouldn't continue, skip to next
-class AbortCurrentRunException(Exception):
-    pass
+sample_cmds="
+#----sample harness_cmds.txt----\n
+set pagination off\n
+set follow-fork-mode child\n
+continue\n
+############\n
+# Cmd to run after crash\n
+info reg\n
+bt\n
+############\n
+quit\n
+"
 
-# Raise this to indicate that the current test should be re-run
-# (Same as AbortCurrentRun, but will re-try current test)
-class RetryCurrentRunException(Exception):
-    pass
+if [ ! -f ./harness_cmds.txt ]; then
+    echo $sample_cmds > ./harness_cmds.txt
+fi
 
-# Raise this to log, just like LogCrashException, except 
-# stop testing entirely afterwards
-class LogAndHaltException(Exception):
-    pass
+# break on ctrl-c
+trap break_loop INT
 
-# Raise this to log the previous run and stop testing completely
-# Primarily used if daemon gives connection refused
-# Assumes that previous run caused a crash
-class LogLastAndHaltException(Exception):
-    pass
+break_loop() {
+    echo "[^_^] Exiting simple harness"
+    exit
+}
 
-# Raise this to simply abort testing altogether
-class HaltException(Exception):
-    pass
-
-# For fuzzing campaigns, where we want to log, sleep, and continue
-class LogSleepGoException(Exception):
-    pass
-
-
-# List of exceptions that can be thrown by a MessageProcessor
-class MessageProcessorExceptions(object):
-    all = [LogCrashException, AbortCurrentRunException, RetryCurrentRunException, LogAndHaltException, LogLastAndHaltException, HaltException, LogSleepGoException]
-
-# This is raised by the fuzzer when the server has closed the connection gracefully
-class ConnectionClosedException(Exception):
-    pass
-
+while true; do
+	gdb -x harness_cmds.txt --pid `pgrep $target` 2>&1 > harness.log || echo "No target? ($target)"; sleep 2 
+	grep "SIGSEGV" harness.log && cat harness.log | nc $fuzzing_host 6969
+done

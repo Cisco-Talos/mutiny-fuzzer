@@ -29,16 +29,26 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
+#------------------------------------------------------------------
 # Type definitions for the fuzzer
-#
 # This script defines the various message and data types used in
 # the fuzzer, and utility functions used by them.
 #------------------------------------------------------------------
+from datetime import datetime
 
 class MessageSubComponent(object):
-    def __init__(self, message, isFuzzed):
+    def __init__(self, message, attributes):
+        self.attributes = attributes
         self.message = message
-        self.isFuzzed = isFuzzed
+        self.isFuzzed = False
+
+        if 'fuzz' in self.attributes: 
+            self.isFuzzed = True
+        
+        self.fixedSize = -1
+        if "fixedSize" in self.attributes:
+            self.fixedSize = len(message)
+ 
         # This includes both fuzzed messages and messages the user
         # has altered with messageprocessor callbacks
         self._altered = message
@@ -48,30 +58,27 @@ class MessageSubComponent(object):
     
     def getAlteredByteArray(self):
         return self._altered
-    
-    def getOriginalByteArray(self):
-        return self.message
 
-# Contains all data of a given packet of the session            
+# Contains all data of a given packet of the session. Does not actually hold any 
+# strings itself, its essentially a container for a <1,2,..,N> submessages.            
 class Message(object):
+
     class Direction:
         Outbound = "outbound"
-        Inbound = "inbound"
-    
+        Inbound ="inbound"
+
     class Format:
         CommaSeparatedHex = 0 # 00,01,02,20,2a,30,31
         Ascii = 1 # asdf\x00\x01\x02
         Raw = 2 # a raw byte array from a pcap
         
     def __init__(self):
+        self.attributes = []
         self.direction = -1
-        # Whether any subcomponent is fuzzed - might not be entire message
-        # Default to False, set to True as message subcomponents are set below
-        self.isFuzzed = False 
-        # This will be populated with message subcomponents
-        # IE, specified as message 0 11,22,33
-        # 44,55,66
-        # Then 11,22,33 will be subcomponent 0, 44,55,66 will be subcomponent 1
+        # Submessages have their own attributes/fuzzed/etc. Whereas linebreaks don't.  
+        # outbound 'msg'
+        #          'moreMessge'
+        # sub fuzz 'msg'
         # If it's a traditional message, it will only have one element (entire message)
         self.subcomponents = []
 
@@ -97,31 +104,11 @@ class Message(object):
         for subcomponent in self.subcomponents:
             subcomponent.setAlteredByteArray(subcomponent.message)
     
-    # Set the message on the Message
-    # sourceType - Format.CommaSeparatedHex, Ascii, or Raw
-    # message - Message in above format
-    # isFuzzed - whether this message should have its subcomponent
-    #   flag isFuzzed set
-    def setMessageFrom(self, sourceType, message, isFuzzed):
-        if sourceType == self.Format.CommaSeparatedHex:
-            message = bytearray(map(lambda x: x.decode("hex"), message.split(",")))
-        elif sourceType == self.Format.Ascii:
-            message = self.deserializeByteArray(message)
-        elif sourceType == self.Format.Raw:
-            message = message
-        else:
-            raise RuntimeError("Invalid sourceType")
-        
-        self.subcomponents = [MessageSubComponent(message, isFuzzed)]
-        
-        if isFuzzed:
-            self.isFuzzed = True
-    
     # Same arguments as above, but adds to .message as well as
     # adding a new subcomponent
     # createNewSubcomponent - If false, don't create another subcomponent,
     #   instead, append new message data to last subcomponent in message
-    def appendMessageFrom(self, sourceType, message, isFuzzed, createNewSubcomponent=True):
+    def appendMessageFrom(self, sourceType, message, attributes, createNewSubcomponent=True):
         if sourceType == self.Format.CommaSeparatedHex:
             newMessage = bytearray(map(lambda x: x.decode("hex"), message.split(",")))
         elif sourceType == self.Format.Ascii:
@@ -132,13 +119,9 @@ class Message(object):
             raise RuntimeError("Invalid sourceType")
         
         if createNewSubcomponent:
-            self.subcomponents.append(MessageSubComponent(newMessage, isFuzzed))
+            self.subcomponents.append(MessageSubComponent(newMessage, attributes))
         else:
             self.subcomponents[-1].message += newMessage
-
-        if isFuzzed:
-            # Make sure message is set to fuzz as well
-            self.isFuzzed = True
     
     def isOutbound(self):
         return self.direction == self.Direction.Outbound
@@ -155,7 +138,8 @@ class Message(object):
     @classmethod
     def deserializeByteArray(cls, string):
         # This appears to properly reverse repr() without the risks of eval
-        return bytearray(string[1:-1].decode('string_escape'))
+        tmp = bytearray(string[1:-1].decode('string_escape'))
+        return tmp
     
     def getAlteredSerialized(self):
         if len(self.subcomponents) < 1:
@@ -164,7 +148,7 @@ class Message(object):
             serializedMessage = "{0}{1} {2}\n".format("fuzz " if self.subcomponents[0].isFuzzed else "", self.direction, self.serializeByteArray(self.subcomponents[0].getAlteredByteArray()))
             
             for subcomponent in self.subcomponents[1:]:
-                serializedMessage += "sub {0}{1}\n".format("fuzz " if subcomponent.isFuzzed else "", self.serializeByteArray(subcomponent.getAlteredByteArray()))
+                serializedMessage += "more {0}{1}\n".format("fuzz " if subcomponent.isFuzzed else "", self.serializeByteArray(subcomponent.getAlteredByteArray()))
             
             return serializedMessage
     
@@ -175,18 +159,18 @@ class Message(object):
             serializedMessage = "{0} {1}{2}\n".format(self.direction, "fuzz " if self.subcomponents[0].isFuzzed else "", self.serializeByteArray(self.subcomponents[0].message))
             
             for subcomponent in self.subcomponents[1:]:
-                serializedMessage += "sub {0}{1}\n".format("fuzz " if subcomponent.isFuzzed else "", self.serializeByteArray(subcomponent.message))
+                serializedMessage += "more {0}{1}\n".format("fuzz " if subcomponent.isFuzzed else "", self.serializeByteArray(subcomponent.message))
             
             return serializedMessage
 
     # Utility function for setFromSerialized and appendFromSerialized below
     def _extractMessageComponents(self, serializedData):
+        # Just assume everything from the first single quote to the end is the message
         firstQuote = serializedData.find("'")
-        secondQuote = serializedData.rfind("'")
-        if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
+        if firstQuote == -1:
             raise RuntimeError("Invalid message data, no message found")
         # Pull out everything, quotes and all, and deserialize it
-        messageData = serializedData[firstQuote:secondQuote+1]
+        messageData = serializedData[firstQuote:]
         # Process the args
         serializedData = serializedData[:firstQuote].split(" ")
         
@@ -202,42 +186,26 @@ class Message(object):
             raise RuntimeError("Invalid message data")
         
         direction = serializedData[0]
-        args = serializedData[1:-1]
-        
+        attrs = serializedData[1:-1]
+
         if direction != "inbound" and direction != "outbound":
             raise RuntimeError("Invalid message data, unknown direction {0}".format(direction))
         
-        isFuzzed = False
-        if "fuzz" in args:
-            isFuzzed = True
-            if len(serializedData) < 3:
-                raise RuntimeError("Invalid message data")
-        
         self.direction = direction
-        self.setMessageFrom(self.Format.Ascii, messageData, isFuzzed)
+        self.appendMessageFrom(self.Format.Ascii, messageData, attrs)
     
     # Add another line, used for multiline messages
-    def appendFromSerialized(self, serializedData, createNewSubcomponent=True):
-        serializedData = serializedData.replace("\n", "")
+    def appendFromSerialized(self, serializedData):
+        # there shouldn't be any newlines...
+        # serializedData = serializedData.replace("\n", "")
         (serializedData, messageData) = self._extractMessageComponents(serializedData)
         
-        if createNewSubcomponent:
-            if len(messageData) == 0 or len(serializedData) < 1 or serializedData[0] != "sub":
-                raise RuntimeError("Invalid message data")
-        else:
-            # If not creating a subcomponent, we won't have "sub", "fuzz", and the other fun stuff
-            if len(messageData) == 0:
-                raise RuntimeError("Invalid message data")
+        if len(messageData) == 0 or len(serializedData) < 1 or serializedData[0] != "more":
+            raise RuntimeError("Invalid message data")
         
-        args = serializedData[1:-1]
-        # Put either "fuzz" or nothing before actual message
-        # Can tell the difference even with ascii because ascii messages have '' quotes
-        # IOW, even a message subcomponent 'fuzz' will have the 's around it, not be fuzz without quotes
-        isFuzzed = False
-        if "fuzz" in args:
-            isFuzzed = True
-        
-        self.appendMessageFrom(self.Format.Ascii, messageData, isFuzzed, createNewSubcomponent=createNewSubcomponent)
+        attrs = serializedData[1:-1]
+        self.appendMessageFrom(self.Format.Ascii, messageData, attrs)
+
 
 class MessageCollection(object):
     def __init__(self):
@@ -261,6 +229,9 @@ class MessageCollection(object):
         # All messages passed
         return True
 
+    def __getitem__(self,i):
+        return self.messages[i]
+
 import os
 import os.path
 from copy import deepcopy
@@ -269,36 +240,36 @@ from copy import deepcopy
 # Log messages can be found at sample_apps/<app>/<app>_logs/<date>/
 class Logger(object):
     def __init__(self, folderPath):
-        self._folderPath = folderPath
-        if os.path.exists(folderPath):
-            print "Data output directory already exists: %s" % (folderPath)
-            exit()
-        else:
+        self._folderPath = os.path.join(folderPath,str(datetime.now()))
+        if not os.path.isdir(self._folderPath):
             try:
-                os.makedirs(folderPath)
+                os.makedirs(self._folderPath)
             except:
-                print "Unable to create logging directory: %s" % (folderPath)
-                exit()
+                pass
 
         self.resetForNewRun()
 
-    # Store just the data, forget trying to make a Message object
-    # With the subcomponents and everything, it just gets weird, 
-    # and we don't need it
-    def setReceivedMessageData(self, messageNumber, data):
-        self.receivedMessageData[messageNumber] = data
+    def setReceivedMessages(self, messageNumber, data):
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        message.message = data
+        self.receivedMessages[messageNumber] = message
 
     def setHighestMessageNumber(self, messageNumber):
         # The highest message # this fuzz session made it to
         self._highestMessageNumber = messageNumber
 
-    def outputLastLog(self, runNumber, messageCollection, errorMessage):
-        return self._outputLog(runNumber, messageCollection, errorMessage, self._lastReceivedMessageData, self._lastHighestMessageNumber)
+    def outputLastLog(self, runNumber, messageCollection, errorMessage, messagesToFuzz):
+        return self._outputLog(runNumber, messageCollection, errorMessage, messagesToFuzz, self._lastReceivedMessages, self._lastHighestMessageNumber)
+    def logSimple(self,msg):
+        with open(os.path.join(self._folderPath, "output_log.txt"), "a") as outputFile:
+            time = str(datetime.now())
+            outputFile.write("%s| %s\n"%(time,msg))
 
-    def outputLog(self, runNumber, messageCollection, errorMessage):
-        return self._outputLog(runNumber, messageCollection, errorMessage, self.receivedMessageData, self._highestMessageNumber)
+    def outputLog(self, runNumber, messageCollection, errorMessage, messagesToFuzz):
+        return self._outputLog(runNumber, messageCollection, errorMessage, messagesToFuzz, self.receivedMessages, self._highestMessageNumber)
 
-    def _outputLog(self, runNumber, messageCollection, errorMessage, receivedMessageData, highestMessageNumber):
+    def _outputLog(self, runNumber, messageCollection, errorMessage, messagesToFuzz, receivedMessages, highestMessageNumber):
         with open(os.path.join(self._folderPath, str(runNumber)), "w") as outputFile:
             print "Logging run number %d" % (runNumber)
             outputFile.write("Log from run with seed %d\n" % (runNumber))
@@ -313,13 +284,13 @@ class Logger(object):
             for message in messageCollection.messages:
                 outputFile.write("Packet %d: %s" % (i, message.getSerialized()))
 
-                if message.isFuzzed:
-                    outputFile.write("Fuzzed Packet %d: %s\n" % (i, message.getAlteredSerialized()))
-                
-                if receivedMessageData.has_key(i):
+                if i in messagesToFuzz:
+                    outputFile.write("Fuzzed Packet %d: %s\n" % (i, message.getFuzzedSerialized()))
+
+                if receivedMessages.has_key(i):
                     # Compare what was actually sent to what we expected, log if they differ
-                    if receivedMessageData[i] != message.getOriginalMessage():
-                        outputFile.write("Actual data received for packet %d: %s" % (i, Message.serializeByteArray(receivedMessageData[i])))
+                    if receivedMessages[i].message != message.message:
+                        outputFile.write("Actual data received for packet %d: %s" % (i, receivedMessages[i].getSerialized()))
                     else:
                         outputFile.write("Received expected data\n")
 
@@ -334,11 +305,11 @@ class Logger(object):
 
     def resetForNewRun(self):
         try:
-            self._lastReceivedMessageData = deepcopy(self.receivedMessageData)
+            self._lastReceivedMessages = deepcopy(self.receivedMessages)
             self._lastHighestMessageNumber = self._highestMessageNumber
         except AttributeError:
-            self._lastReceivedMessageData = {}
+            self._lastReceivedMessages = {}
             self._lastHighestMessageNumber = -1
 
-        self.receivedMessageData = {}
+        self.receivedMessages = {}
         self.setHighestMessageNumber(-1)

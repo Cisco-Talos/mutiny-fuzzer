@@ -29,10 +29,8 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-#
 # Class to hold fuzzer data (.fuzzer file info)
 # Can read/write .fuzzer files from an instantiation
-#
 #------------------------------------------------------------------
 
 from backend.fuzzer_types import MessageCollection, Message
@@ -57,13 +55,18 @@ class FuzzerData(object):
         self.proto = "tcp"
         # Port to use
         self.port = 0
-        # Source port to use, -1 = auto
-        self.sourcePort = -1
-        # Source IP to use, 0.0.0.0 or "" is default/automatic
-        self.sourceIP = "0.0.0.0"
         # Whether to perform a test run
         self.shouldPerformTestRun = True
         # How long to time out on receive() (seconds)
+
+        # Are we a client or a server? ( default => client )
+        self.clientMode = True 
+        self.firstMessage = True
+        self.fuzzDirection = Message.Direction.Outbound 
+    
+        # Which message are we fuzzing? (used for round robin)
+        self.currentMessageToFuzz = None
+        
         self.receiveTimeout = 1.0
         # Dictionary to save comments made to a .fuzzer file.  Only really does anything if 
         # using readFromFile and then writeToFile in the same program
@@ -72,10 +75,94 @@ class FuzzerData(object):
         # Kind of kludgy string for use in readFromFD, made global to not have to pass around
         # Details in readFromFD()
         self._readComments = ""
-        # Update for compatibilty with new Decept
-        self.messagesToFuzz = [] 
+
+        # Repurposed for keeping track of which msg we're on if RoundRobin
+        # Private: List of messages to be fuzzed
+        # Should be set with setFromStr below
+        self._messagesToFuzz = []
+        # Private: original messages to fuzz str from user input or .fuzzer
+        self._messagesToFuzzStr = ""        
+
+        # Private: List of bytes to not fuzz
+        # Should be set with setFromStr below
+        self._unfuzzedBytes = {}
+        # Private: original unfuzzed bytes strings that the above came from
+        # (either from user input or .fuzzer file)
+        # Example: 1,3,5-10
+        self._unfuzzedBytesStrs = {}
     
+        # If any message is longer than this, it'll get seperated with 'more' messages
+        self.max_cols = 80
+
+        # This designates where the fuzzer information stops and the message processor info
+        # begins inside of the .fuzzer file
+        self.fuzzer_end_delim = "########END FUZZER########\n" 
+        
+
+    # Prevent anyone tampering with the internal unfuzzed bytes storage via properties
+    @property
+    def unfuzzedBytes(self):
+        return self._unfuzzedBytes
     
+    # For readability, don't actually implement setter 
+    # (Would get confusing if we did unfuzzedBytes = string everywhere)
+    @unfuzzedBytes.setter
+    def unfuzzedBytes(self, value):
+        raise NotImplementedError("NOT SETTING unfuzzedBytes - Use setUnfuzzedBytesFromString")
+    
+    # Set unfuzzed bytes dict from string (such as "unfuzzedBytes 0 1,3,5-10")
+    def setUnfuzzedBytesFromString(self, packetNum, unfuzzedBytesStr):
+        self._unfuzzedBytesStrs[packetNum] = unfuzzedBytesStr
+        self.unfuzzedBytes[packetNum] = validateNumberRange(unfuzzedBytesStr)
+    
+    '''
+    def editCurrentlyFuzzedMessage(self,new_message):
+        self.messageCollection[self.currentMessageToFuzz].setMessageFrom(1,new_message,True)
+    '''
+
+    # Prevent anyone tampering with the internal messages to fuzz storage via properties
+    @property
+    def messagesToFuzz(self):
+        return self._messagesToFuzz
+    
+    # For readability, don't implement setter - see above
+    @messagesToFuzz.setter
+    def messagesToFuzz(self, value):
+        raise NotImplementedError("NOT SETTING messagesToFuzz - Use setMessagesToFuzzFromString")
+     
+    # Set messagesToFuzz from string (such as "1,3-4")
+    def setMessagesToFuzzFromString(self, messagesToFuzzStr):
+        self._messagesToFuzzStr = messagesToFuzzStr
+        self._messagesToFuzz = validateNumberRange(messagesToFuzzStr, flattenList=True)
+        #print self._messagesToFuzz
+
+    def addMessagesToFuzz(self,msg_num):
+        
+        if len(self._messagesToFuzz):
+            self._messagesToFuzzStr+=","
+         
+        self._messagesToFuzzStr+="%s"%msg_num
+        #print "msg to fuzz: %s" % self._messagesToFuzzStr
+        self.setMessagesToFuzzFromString(self._messagesToFuzzStr)
+        
+    def getMessagesToFuzzAsString(self):
+        return self._messagesToFuzzStr
+    
+    # Clear messagesToFuzz
+    def clearMessagesToFuzz(self):
+        self._messagesToFuzz = []
+        self._messagesToFuzzStr = ""        
+
+    def rotateNextMessageToFuzz(self):
+        try:    
+            _ = self._messagesToFuzz[self.currentMessageToFuzz+1] 
+            self.currentMessageToFuzz+=1 
+            #print "rrotating! new:%d" %(self.currentMessageToFuzz)
+        except Exception as e:
+            self.currentMessageToFuzz = 0
+            #print "rotating! new:%d" %(self.currentMessageToFuzz)
+                
+            
     # Read in the FuzzerData from the specified .fuzzer file
     def readFromFile(self, filePath, quiet=False):
         with open(filePath, 'r') as inputFile:
@@ -94,9 +181,6 @@ class FuzzerData(object):
         else:
             self.comments[commentSectionName] = self._readComments
         self._readComments = ""
-
-    # Update for compatibilty with newer versions of Decept.
-    
     
     # Read in the FuzzerData from a specific file descriptor
     # Most usefully can be used to read from stdout by passing
@@ -104,6 +188,8 @@ class FuzzerData(object):
     def readFromFD(self, fileDescriptor, quiet=False):
         messageNum = 0
         
+        # for keeping track we're fuzzing multiple messages (-x round robin)
+        messagesToFuzz = []
         # This is used to track multiline messages
         lastMessage = None
         # Build up comments in this string until we're ready to push them out to the dictionary
@@ -115,6 +201,10 @@ class FuzzerData(object):
         for line in fileDescriptor:
             # Record comments on read so we can play them back on write if applicable
             if line.startswith("#") or line == "\n":
+                if line == self.fuzzer_end_delim: 
+                    #stop processing .fuzzer elements
+                    break
+
                 self._readComments += line
                 # Skip all further processing for this line
                 continue
@@ -122,90 +212,127 @@ class FuzzerData(object):
             line = line.replace("\n", "")
             
             # Skip comments and whitespace
-            if not line.startswith("#") and not line == "" and not line.isspace():
+            if line.startswith("'''"):
+                continue
+            if line == "":
+                continue
+            if line.isspace():
+                continue
+           
+            msg = line.find("'") 
+            if msg > -1:
+                args = line[:msg].split(" ")
+            else:
                 args = line.split(" ")
-                
-                # Populate FuzzerData obj with any settings we can parse out
-                try:
-                    if args[0] == "processor_dir":
-                        self.processorDirectory = args[1]
-                        self._pushComments("processor_dir")
-                    elif args[0] == "failureThreshold":
-                        self.failureThreshold = int(args[1])
-                        self._pushComments("failureThreshold")
-                    elif args[0] == "failureTimeout":
-                        self.failureTimeout = int(args[1])
-                        self._pushComments("failureTimeout")
-                    elif args[0] == "proto":
-                        self.proto = args[1]
-                        self._pushComments("proto")
-                    elif args[0] == "port":
-                        self.port = int(args[1])
-                        self._pushComments("port")
-                    elif args[0] == "sourcePort":
-                        self.sourcePort = int(args[1])
-                        self._pushComments("sourcePort")
-                    elif args[0] == "sourceIP":
-                        self.sourceIP = args[1]
-                        self._pushComments("sourceIP")
-                    elif args[0] == "shouldPerformTestRun":
-                        # Use 0 or 1 for setting
-                        if args[1] == "0":
-                            self.shouldPerformTestRun = False
-                        elif args[1] == "1":
-                            self.shouldPerformTestRun = True
-                        else:
-                            raise RuntimeError("shouldPerformTestRun must be 0 or 1")
-                        self._pushComments("shouldPerformTestRun")
-                    elif args[0] == "receiveTimeout":
-                        self.receiveTimeout = float(args[1])
-                        self._pushComments("receiveTimeout")
-                    elif args[0] == "messagesToFuzz":
-                        print("WARNING: It looks like you're using a legacy .fuzzer file with messagesToFuzz set.  This is now deprecated, so please update to the new format")
-                        self.messagesToFuzz = validateNumberRange(args[1], flattenList=True)
-                        # Slight kludge: store comments above messagesToFuzz with the first message.  *shrug*
-                        # Comment saving is best effort anyway, right?
-                        self._pushComments("message0")
-                    elif args[0] == "unfuzzedBytes":
-                        print("ERROR: It looks like you're using a legacy .fuzzer file with unfuzzedBytes set.  This has been replaced by the new multi-line format.  Please update your .fuzzer file.")
-                        sys.exit(-1)
-                    elif args[0] == "inbound" or args[0] == "outbound":
-                        message = Message()
-                        message.setFromSerialized(line)
-                        self.messageCollection.addMessage(message)
-                        # Legacy code to handle old messagesToFuzz format
-                        if messageNum in self.messagesToFuzz:
-                            message.isFuzzed = True
-                        if not quiet:
-                            print "\tMessage #{0}: {1} bytes {2}".format(messageNum, len(message.getOriginalMessage()), message.direction)
-                        self._pushComments("message{0}".format(messageNum))
-                        messageNum += 1
-                        lastMessage = message
-                    # "sub" means this is a subcomponent
-                    elif args[0] == "sub":
-                        if not 'message' in locals():
-                            print "\tERROR: 'sub' line declared before any 'message' lines, throwing subcomponent out: {0}".format(line)
-                        else:
-                            message.appendFromSerialized(line)
-                            if not quiet:
-                                print "\t\tSubcomponent: {1} additional bytes".format(messageNum, len(message.subcomponents[-1].message))
-                    elif line.lstrip()[0] == "'" and 'message' in locals():
-                        # If the line begins with ' and a message line has been found,
-                        # assume that this is additional message data
-                        # (Different from a subcomponent because it can't have additional data 
-                        # tacked on)
-                        message.appendFromSerialized(line.lstrip(), createNewSubcomponent=False)
+
+            # Populate FuzzerData obj with any settings we can parse out
+            try:
+                if args[0] == "processor_dir":
+                    self.processorDirectory = args[1]
+                    self._pushComments("processor_dir")
+                elif args[0] == "failureThreshold":
+                    self.failureThreshold = int(args[1])
+                    self._pushComments("failureThreshold")
+                elif args[0] == "failureTimeout":
+                    self.failureTimeout = float(args[1])
+                    self._pushComments("failureTimeout")
+                elif args[0] == "proto":
+                    self.proto = args[1]
+                    self._pushComments("proto")
+                elif args[0] == "port":
+                    self.port = int(args[1])
+                    self._pushComments("port")
+                elif args[0] == "shouldPerformTestRun":
+                    # Use 0 or 1 for setting
+                    if args[1] == "0":
+                        self.shouldPerformTestRun = False
+                    elif args[1] == "1":
+                        self.shouldPerformTestRun = True
                     else:
-                        if not quiet:
-                            print "Unknown setting in .fuzzer file: {0}".format(args[0])
-                    # Slap any messages between "message" and "sub", etc (ascii same way) above message
-                    # It's way too annoying to print these out properly, as they get
-                    # automagically outserialized by the Message object
-                    # Plus they may change... eh, forget it, user can fix up themselves if they want
-                    self._appendComments("message{0}".format(messageNum-1))
-                except Exception as e:
-                    print "Invalid line: {0}".format(line)
-                    raise e
+                        raise RuntimeError("shouldPerformTestRun must be 0 or 1")
+                    self._pushComments("shouldPerformTestRun")
+                elif args[0] == "receiveTimeout":
+                    self.receiveTimeout = float(args[1])
+                    self._pushComments("receiveTimeout")
+                elif args[0] == "messagesToFuzz":
+                    print("WARNING: It looks like you're using a legacy .fuzzer file with messagesToFuzz set.  This is now deprecated, so please update to the new format")
+                    self.setMessagesToFuzzFromString(args[1])
+                    # Slight kludge: store comments above messagesToFuzz with the first message.  *shrug*
+                    # Comment saving is best effort anyway, right?
+                    self._pushComments("message0")
+                elif args[0] == "unfuzzedBytes":
+                    print("ERROR: It looks like you're using a legacy .fuzzer file with unfuzzedBytes set.  This has been replaced by the new multi-line format.  Please update your .fuzzer file.")
+                    sys.exit(-1)
+                elif args[0] == "inbound" or args[0] == "outbound":
+                    message = Message()
+                    message.setFromSerialized(line)
+                    self.messageCollection.addMessage(message)
+                    if not quiet:
+                        print "\tMessage #{0}: {1} bytes {2}".format(messageNum, len(message.getOriginalMessage()), message.direction)
+                    self._pushComments("message{0}".format(messageNum))
+
+                    if "fuzz" in args:
+                        self.addMessagesToFuzz(messageNum)
+
+                    messageNum += 1
+                    subMessageNum = 0
+                    lastMessage = message
+
+                    if len(args) > 2:
+                        #print args[1:-1]
+                        for attr in args[1:-1]:
+                            message.attributes.append(attr) 
+                            #print message.attributes  
+        
+                    # for detecting server or client mode
+                    if self.firstMessage:  
+                        self.firstMessage = False
+                        if args[0] == "inbound":
+                            print "SERVER MODE"
+                            self.clientMode = False 
+                            self.fuzzDirection = Message.Direction.Inbound 
+                        elif args[0] == "outbound":
+                            print "ClientER MODE"
+                            self.clientMode = True 
+                            self.fuzzDirection = Message.Direction.Outbound 
+
+                # "more" means this is another line
+                elif args[0] == "more":
+
+                    subMessageNum+=1
+                    message.appendFromSerialized(line)
+                    
+                    if "fuzz" in args:
+                        self.addMessagesToFuzz("%d.%d"%(messageNum-1,subMessageNum))
+
+                    if not quiet:
+                        #print "asfd: %s" % message.subcomponents[-1].message
+                        print "\tSubcomponent: {1} additional bytes".format(messageNum, len(line)) 
+                    
+                    if len(args) > 2:
+                        #print args[1:-1]
+                        for attr in args[1:-1]:
+                            message.subcomponents[-1].attributes.append(attr) 
+                            #print message.subcompenents[-1].attributes 
+
+                else:
+                    if not quiet:
+                        print "Unknown setting in .fuzzer file: {0}".format(args[0])
+                # Slap any messages between "message" and "moremessage" (ascii same way) above message
+                # It's way too annoying to print these out properly, as they get
+                # automagically outserialized by the Message object
+                # Plus they may change... eh, forget it, user can fix up themselves if they want
+                self._appendComments("message{0}".format(messageNum-1))
+
+
+                
+            except IndexError as e:
+                pass
+    
+            except Exception as e:
+                print "Invalid line: {0}".format(line)
+                raise e
+
         # Catch any comments below the last line
         self._pushComments("endcomments")
                         
@@ -216,12 +343,6 @@ class FuzzerData(object):
             return self.comments[commentSectionName]
         else:
             return ""
-
-    # Set messagesToFuzz from string (such as "1,3-4")
-    def setMessagesToFuzzFromString(self, messagesToFuzzStr):
-        self.messagesToFuzz = validateNumberRange(messagesToFuzzStr, flattenList=True)
-        #print self._messagesToFuzz
-
     
     # Write out the FuzzerData to the specified .fuzzer file
     def writeToFile(self, filePath, defaultComments=False, finalMessageNum=-1):
@@ -241,11 +362,15 @@ class FuzzerData(object):
         return filePath
 
     # Write out the FuzzerData to a specific file descriptor
-    # Most usefully can be used to write to stdout by passing
-    # sys.stdout
-    def writeToFD(self, fileDescriptor, defaultComments=False, finalMessageNum=-1):
+    # if no file descriptor is given, then we just return the buffer
+    def writeToFD(self, fileDescriptor=None, defaultComments=False, finalMessageNum=-1):
+        output_buffer = ""
+
+        # for optional inclusion of processor into .fuzzer
+        output_buffer += "'''\n"
+        
         if not defaultComments and "start" in self.comments:
-            fileDescriptor.write(self.comments["start"])
+            output_buffer += self.comments["start"]
         
         # Processor Directory
         if defaultComments:
@@ -253,79 +378,106 @@ class FuzzerData(object):
             comment += "# This should be either an absolute path or relative to the .fuzzer file\n"
             comment += "# If set to \"default\", Mutiny will use any processors in the same\n"
             comment += "# folder as the .fuzzer file\n"
-            fileDescriptor.write(comment)
+            output_buffer += comment
         else:
-            fileDescriptor.write(self._getComments("processor_dir"))
-        fileDescriptor.write("processor_dir {0}\n".format(self.processorDirectory))
+            output_buffer += self._getComments("processor_dir")
+        output_buffer += "processor_dir {0}\n".format(self.processorDirectory)
         
         # Failure Threshold
         if defaultComments:
-            fileDescriptor.write("# Number of times to retry a test case causing a crash\n")
+            output_buffer += "# Number of times to retry a test case causing a crash\n"
         else:
-            fileDescriptor.write(self._getComments("failure_threshold"))
-        fileDescriptor.write("failureThreshold {0}\n".format(self.failureThreshold))
+            output_buffer += self._getComments("failure_threshold")
+        output_buffer += "failureThreshold {0}\n".format(self.failureThreshold)
         
         # Failure Timeout
         if defaultComments:
-            fileDescriptor.write("# How long to wait between retrying test cases causing a crash\n")
+            output_buffer += "# How long to wait between retrying test cases causing a crash\n"
         else:
-            fileDescriptor.write(self._getComments("failureTimeout"))
-        fileDescriptor.write("failureTimeout {0}\n".format(self.failureTimeout))
+            output_buffer += self._getComments("failureTimeout")
+        output_buffer += "failureTimeout {0}\n".format(self.failureTimeout)
         
         # Receive Timeout
         if defaultComments:
-            fileDescriptor.write("# How long for recv() to block when waiting on data from server\n")
+            output_buffer += "# How long for recv() to block when waiting on data from server\n"
         else:
-            fileDescriptor.write(self._getComments("receiveTimeout"))
-        fileDescriptor.write("receiveTimeout {0}\n".format(self.receiveTimeout))
+            output_buffer += self._getComments("receiveTimeout")
+        output_buffer += "receiveTimeout {0}\n".format(self.receiveTimeout)
         
         # Should Perform Test Run
         if defaultComments:
-            fileDescriptor.write("# Whether to perform an unfuzzed test run before fuzzing\n")
+            output_buffer += "# Whether to perform an unfuzzed test run before fuzzing\n"
         else:
-            fileDescriptor.write(self._getComments("shouldPerformTestRun"))
+            output_buffer += self._getComments("shouldPerformTestRun")
         sPTR = 1 if self.shouldPerformTestRun else 0
-        fileDescriptor.write("shouldPerformTestRun {0}\n".format(sPTR))
+        output_buffer += "shouldPerformTestRun {0}\n".format(sPTR)
         
         # Protocol
         if defaultComments:
-            fileDescriptor.write("# Protocol (udp or tcp)\n")
+            output_buffer += "# Protocol (udp or tcp)\n"
         else:
-            fileDescriptor.write(self._getComments("proto"))
-        fileDescriptor.write("proto {0}\n".format(self.proto))
+            output_buffer += self._getComments("proto")
+        output_buffer += "proto {0}\n".format(self.proto)
         
         # Port
         if defaultComments:
-            fileDescriptor.write("# Port number to connect to\n")
+            output_buffer += "# Port number to connect to\n"
         else:
-            fileDescriptor.write(self._getComments("port"))
-        fileDescriptor.write("port {0}\n".format(self.port))
+            output_buffer += self._getComments("port")
+        output_buffer += "port {0}\n\n".format(self.port)
         
-        # Source Port
-        if defaultComments:
-            fileDescriptor.write("# Port number to connect from\n")
-        else:
-            fileDescriptor.write(self._getComments("sourcePort"))
-        fileDescriptor.write("sourcePort {0}\n".format(self.sourcePort))
-
-        # Source IP
-        if defaultComments:
-            fileDescriptor.write("# Source IP to connect from\n")
-        else:
-            fileDescriptor.write(self._getComments("sourceIP"))
-        fileDescriptor.write("sourceIP {0}\n\n".format(self.sourceIP))
-
         # Messages
         if finalMessageNum == -1:
             finalMessageNum = len(self.messageCollection.messages)-1
         if defaultComments:
-            fileDescriptor.write("# The actual messages in the conversation\n# Each contains a message to be sent to or from the server, printably-formatted\n")
+            output_buffer += "# The actual messages in the conversation\n# Each contains a message to be sent to or from the server, printably-formatted\n"
+            output_buffer += "# Note, if you want to fuzz a submessage (designated by 'more'), then that submessage must also be marked 'fuzz'\n"  
         for i in range(0, finalMessageNum+1):
-            message = self.messageCollection.messages[i]
+            message = self.messageCollection[i]
             if not defaultComments:
-                fileDescriptor.write(self._getComments("message{0}".format(i)))
-            fileDescriptor.write(message.getSerialized())
+                output_buffer += self._getComments("message{0}".format(i))
+           
+            #code to make default dumps look nicer (at least for ascii captures)
+            old_newline = 0
+            tmp_buf = message.getSerialized().replace("'","\'")
+            #print "TEMP_BUF: %s" % tmp_buf
+            newline = tmp_buf.find("\\n")+2
+            if newline > 1: # actualy found a "\n"
+                output_buffer += tmp_buf[:newline] + "'\n"
+                tmp_buf = tmp_buf[newline:]
+                newline = tmp_buf.find("\\n")+2
+            else:
+                output_buffer += tmp_buf
+                continue
             
-        
+
+            while newline > 1 and newline < len(tmp_buf):
+                output_buffer += "more \'"
+                output_buffer += tmp_buf[:newline] + "'\n"
+                tmp_buf = tmp_buf[newline:]
+                newline = tmp_buf.find("\\n")+2
+
+            if len(tmp_buf) > 2:
+                output_buffer+="more \'%s" % tmp_buf
+                output_buffer+="\n"
+
+            output_buffer+="\n"
+
         if not defaultComments:
-            fileDescriptor.write(self._getComments("endcomments"))
+            output_buffer += self._getComments("endcomments")
+    
+
+        # closing terminator for processing as python
+        output_buffer+="'''\n"
+        output_buffer+="%s" % self.fuzzer_end_delim
+
+        # read in our message proc template into the output_buffer
+        with open(os.path.join(os.path.dirname(os.path.realpath(__file__)),"message_proc_base.py")) as f:
+            output_buffer += f.read() 
+
+
+        if fileDescriptor:
+            fileDescriptor.write(output_buffer)
+        else:
+            return output_buffer
+        

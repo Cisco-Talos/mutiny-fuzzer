@@ -29,9 +29,11 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-#
+#------------------------------------------------------------------
 # Utility functions for interactive scripts
 #
+# Copyright (c) 2014-2015 by Cisco Systems, Inc.
+# All rights reserved.
 #------------------------------------------------------------------
 
 # used during the mutiny_prep.py .fuzzer generation
@@ -145,8 +147,11 @@ def validateNumberRange(inputStr, flattenList=False):
                     print "Invalid range given"
                     return None
             else:
-                print "Invalid number given"
-                return None
+                try:
+                    retList.append(float(num))
+                except:
+                    print "Invalid number given"
+                    return None
     # All elements in the range are valid integers or integer ranges
     if flattenList:
         # If list is flattened, every element is an integer

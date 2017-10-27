@@ -29,17 +29,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
-# Base processor for a fuzzing session
-# This script is the base class for the MessageProcessor 
-# Create a message_processor.py file into your project's subfolder
-# File will be imported into mutiny.py. 
 #------------------------------------------------------------------
-
-# Copy this file to your project's mutiny classes directory to
-# change message processing
-# This is useful to alter fuzzed messages before transmission,
-# such as updating outbound messages based on the server's responses
-
+# Base processor for a fuzzing session
+#------------------------------------------------------------------
 import errno
 import socket
 import thread

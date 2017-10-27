@@ -54,46 +54,35 @@ def server_init():
     
     bindip = "127.0.0.1"
     socket_family = socket.AF_INET
-    socket_type = socket.SOCK_STREAM
 
     try:
         if argv[1] == "-6":
             socket_family = socket.AF_INET6
             bindip = "::1" 
-        elif argv[1] == '-l':
+        elif argv[1] == '-u':
             socket_family = socket.AF_UNIX
             bindip = "fdsa" 
-        elif argv[1] == '-u':
-            socket_family = socket.AF_INET
-            socket_type = socket.SOCK_DGRAM
     except IndexError:
         pass
 
-    bindport = 9999 
+    bindport = 8888 
     pid = c_uint()
 
     try:
-        serv = socket.socket(socket_family,socket_type) 
+        serv = socket.socket(socket_family,socket.SOCK_STREAM) 
         serv.bind((bindip,bindport))
-        if socket_type != socket.SOCK_DGRAM:
-            serv.listen(MAX_SESSIONS)
-        print '[^_^] Listening on %s:%d'%(bindip,bindport)
-    except TypeError as e:
+        serv.listen(MAX_SESSIONS)
+    except TypeError:
         try:
-            # this is for unix socket
             serv.bind(bindip)
             serv.listen(MAX_SESSIONS)
         except Exception as e:
             print e
             print "Unable to bind to %s,%d!!" % (bindip,bindport)
             exit(-1)
-    
 
     #Spawn thread for each fuzz session (if mulitple)
     while True:
-        if socket_type == socket.SOCK_DGRAM:
-            client_handler(serv,(bindip,bindport),udp=True)
-            continue
         try:
             cli_sock,cli_addr = serv.accept() 
             fuzz_session = threading.Thread(target=client_handler,args=(cli_sock,cli_addr))
@@ -112,7 +101,7 @@ def server_init():
 # - Records the information into a file upon timeout/crash/normal exit
 #---------------------
 
-def client_handler(cli_sock,cli_addr=None,udp=False): 
+def client_handler(cli_sock,cli_addr=None): 
     try:
         ip = cli_addr[0]
         port = cli_addr[1] 
@@ -137,24 +126,10 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
 # 4 byte - pid
 # . separator
 # 4 byte - number of test cases 
-    if not udp:
-        try:
-            msg = cli_sock.recv(4096).split('.')
-            print "asdf"
-        except:
-            pass
-    else:
-        try:
-            msg,addr = cli_sock.recvfrom(4096)
-            msg = msg.split('.')
-            print "Msg from %s:%d"%addr
-        except Exception as e:
-            return
+    msg = cli_sock.recv(4096).split('.')
 
     if len(msg) != 2 or len(msg[0]) > 4 or len(msg[1].rstrip()) > 4:
         print "Invalid session init: %s" % (msg,)
-        if udp:
-            return
         exit(-1)    
 
     try:
@@ -162,8 +137,6 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
         dirty_input_short = int(msg[1])
         if dirty_input_int >= c_uint(-1).value or dirty_input_short >= c_ushort(-1).value:
             print "Invalid init values given: %d, %d" % (dirty_input_int, dirty_input_short)
-            if udp:
-                return
             exit(-1)
     except:
         print "Unsavory input given: %s, %s" % (msg[0],msg[1]) 
@@ -185,8 +158,6 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
 
     if ret == 0:
         print "Unable to allocate memory! Exiting!"
-        if udp:
-            return
         exit(-1)
 
     fs.tc = cast(ret,c_void_p)
@@ -202,10 +173,7 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
         tmp_struct.status = i
         print "status: %d" % (i,)
     
-    if udp:
-        cli_sock.sendto("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len),addr) 
-    else:
-        cli_sock.send("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)) 
+    cli_sock.send("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)) 
     
 if __name__ == '__main__':
     

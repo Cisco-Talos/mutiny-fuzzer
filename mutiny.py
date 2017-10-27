@@ -29,289 +29,749 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #------------------------------------------------------------------
+# This is the main fuzzing script
 #
-# This is the main fuzzing script.  It takes a .fuzzer file and performs the
-# actual fuzzing
-#
+# This script takes a .fuzzer file and performs the actual fuzzing
 #------------------------------------------------------------------
 
-import datetime
-import errno
-import imp
-import os.path
 import os
+import imp
+import sys
+import time
+import errno
 import signal
 import socket
-import subprocess
-import sys
-import threading
-import time
+import os.path
+import datetime
 import argparse
+import threading
+import subprocess
 
+from re import match
 from copy import deepcopy
-from backend.proc_director import ProcDirector
-from backend.fuzzer_types import Message, MessageCollection, Logger
 from backend.packets import PROTO,IP
-from mutiny_classes.mutiny_exceptions import *
-from mutiny_classes.message_processor import MessageProcessorExtraParams
 from backend.fuzzerdata import FuzzerData
+from backend.proc_director import ProcDirector
 from backend.menu_functions import validateNumberRange
+from backend.fuzzer_types import Message, MessageCollection, Logger
+from mutiny_classes.mutiny_exceptions import *
 
 # Path to Radamsa binary
 RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa-0.3/bin/radamsa") )
 # Whether to print debug info
 DEBUG_MODE=False
-# Test number to start from, 0 default
-MIN_RUN_NUMBER=0
-# Test number to go to, -1 is unlimited
-MAX_RUN_NUMBER=-1
-# For seed loop, finite range to repeat   
-SEED_LOOP = []
-# For dumpraw option, dump into log directory by default, else 'dumpraw'
-DUMPDIR = ""
-
-# Takes a socket and outbound data packet (byteArray), sends it out.
-# If debug mode is enabled, we print out the raw bytes
-def sendPacket(connection, addr, outPacketData):
-
-    if connection.type == socket.SOCK_STREAM:
-        connection.send(outPacketData)
-    else:
-        connection.sendto(outPacketData,addr)
-
-    print "\tSent %d byte packet" % (len(outPacketData))
-    if DEBUG_MODE:
-        print "\tSent: %s" % (outPacketData)
-        print "\tRaw Bytes: %s" % (Message.serializeByteArray(outPacketData))
 
 
-def receivePacket(connection, addr, bytesToRead):
-    readBufSize = 4096
-    connection.settimeout(fuzzerData.receiveTimeout)
+class MutinyFuzzer():
 
-    if connection.type == socket.SOCK_STREAM or connection.type == socket.SOCK_DGRAM:
-        response = bytearray(connection.recv(readBufSize))
-    else:
-        response = bytearray(connection.recvfrom(readBufSize,addr))
+    def __init__(self,args):
+
+        self.args = args
+        # Test number to start from, 0 default
+        self.MIN_RUN_NUMBER=0
+        # Test number to go to, -1 is unlimited
+        self.MAX_RUN_NUMBER=-1
+        # For seed loop, finite range to repeat   
+        self.SEED_LOOP = []
+        # For dumpraw option, dump into log directory by default, else 'dumpraw'
+        self.DUMPDIR = ""
+
+        # used in makeConnector for slight speed up.
+        self.socket_family = None
+        #Populate global arguments from parseargs
+        self.fuzzerFilePath = args.prepped_fuzz
+         
+        self.serverSocket = None
     
-    
-    if len(response) == 0:
-        # If 0 bytes are recv'd, the server has closed the connection
-        # per python documentation
-        raise ConnectionClosedException("Server has closed the connection")
-    if bytesToRead > readBufSize:
-        # If we're trying to read > 4096, don't actually bother trying to guarantee we'll read 4096
-        # Just keep reading in 4096 chunks until we should have read enough, and then return
-        # whether or not it's as much data as expected
-        i = readBufSize
-        while i < bytesToRead:
-            response += bytearray(connection.recv(readBufSize))
-            i += readBufSize
+        self.host = args.target_host
+
+        #Assign Lower/Upper bounds on test cases as needed
+        if args.range:
+            (self.MIN_RUN_NUMBER, self.MAX_RUN_NUMBER) = getRunNumbersFromArgs(args.range)
+        elif args.loop:
+            self.SEED_LOOP = validateNumberRange(args.loop,True) 
+
+        # For POC dumping
+        self.poc_packet_cache = []
+        self.POC_PACKET_COLS = 80
+
+        # Will wait till given the green light by campaign.py for each seed.
+        # will also dump .fuzzer files of seeds that hit new bbs.
+        self.campaign = False
+        self.saved_fuzzy_message = ""
+
+        if args.campaign:
+            self.campaign = True
+            self.campaign_port = args.campaign
+            self.ipc_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            self.ipc_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.ipc_sock.bind(("127.0.0.1",self.campaign_port))
+            self.ipc_sock.listen(1) 
+            self.output("Waiting on connection from controlling campaign.py....")
+            self.camp_sock,self.camp_sock_addr = self.ipc_sock.accept() 
+
+        #Check for dependency binaries
+        if not os.path.exists(RADAMSA):
+            sys.exit("Could not find radamsa in %s... did you build it?" % RADAMSA)
+
+        #Logging options
+        self.isReproduce = True if args.quiet else False 
+        
+        self.fuzzerData = FuzzerData()
+        try:
+            self.fuzzerData.readFromFile(self.fuzzerFilePath)
+        except Exception as e:
+            print e
+            # must have swapped file/host, oh well  
+            self.fuzzerFilePath = args.target_host
+            self.fuzzerData.readFromFile(self.fuzzerFilePath)
+            self.host = args.prepped_fuzz
+            self.args.target_host = args.prepped_fuzz
             
-    print "\tReceived %d bytes" % (len(response))
-    if DEBUG_MODE:
-        print "\tReceived: %s" % (response)
-    return response
+        self.output("Reading in fuzzer data from %s..." % (self.fuzzerFilePath),CYAN)
+        self.outputDataFolderPath = os.path.join("%s_%s" % (os.path.splitext(self.fuzzerFilePath)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
+        self.fuzzerFolder = os.path.abspath(os.path.dirname(self.fuzzerFilePath))
 
-# Perform a fuzz run.  
-# If seed is -1, don't perform fuzzing (test run)
-def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
-    # Before doing anything, set up logger
-    # Otherwise, if connection is refused, we'll log last, but it will be wrong
-    if logger != None:
-        logger.resetForNewRun()
-    
-    # We don't perform DNS resolution, but always automatically type "localhost"
-    # ... really need to go ahead and add DNS resolution soon
-    if host == "localhost":
-        host = "127.0.0.1"
-    
-    # cheap testing for ipv6/ipv4/unix
-    # don't think it's worth using regex for this, since the user
-    # will have to actively go out of their way to subvert this.
-    if "." in host:
-        socket_family = socket.AF_INET
-        addr = (host,fuzzerData.port)
-    elif ":" in host:
-        socket_family = socket.AF_INET6 
-        addr = (host,fuzzerData.port)
-    else:
-        socket_family = socket.AF_UNIX
-        addr = (host)
+        # override the port if cmdline given. (for better scripting)
+        if args.port > 0:
+            self.fuzzerData.port = args.port
 
-    #just in case filename is like "./asdf" !=> AF_INET
-    if "/" in host:
-        socket_family = socket.AF_UNIX
-        addr = (host)
-    
-    # Call messageprocessor preconnect callback if it exists
-    try:
-        messageProcessor.preConnect(seed, host, fuzzerData.port) 
-    except AttributeError:
-        pass
-    
-    # for TCP/UDP/RAW support
-    if fuzzerData.proto == "tcp":
-        connection = socket.socket(socket_family,socket.SOCK_STREAM)
-        # Don't connect yet, until after we do any binding below
-    elif fuzzerData.proto == "udp":
-        connection = socket.socket(socket_family,socket.SOCK_DGRAM)
-    # PROTO = dictionary of assorted L3 proto => proto number
-    # e.g. "icmp" => 1
-    elif fuzzerData.proto in PROTO:
-        connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[fuzzerData.proto]) 
-        if fuzzerData.proto != "raw":
-            connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
-        addr = (host,0)
-        try:
-            connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[fuzzerData.proto]) 
-        except Exception as e:
-            print e
-            print "Unable to create raw socket, please verify that you have sudo access"
-            sys.exit(0)
-    elif fuzzerData.proto == "L2raw":
-        connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
-    else:
-        addr = (host,0)
-        try:
-            #test if it's a valid number 
-            connection = socket.socket(socket_family,socket.SOCK_RAW,int(fuzzerData.proto)) 
-            connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
-        except Exception as e:
-            print e
-            print "Unable to create raw socket, please verify that you have sudo access"
-            sys.exit(0)
+        if args.msgtofuzz:
+            try:
+                self.fuzzerData.setMessagesToFuzzFromString(args.msgtofuzz)
+            except Exception as e:
+                print str(e)
+                exit()
+                
+        ######## Processor Setup ################
+        # The processor just acts as a container #
+        # class that will import custom versions #
+        # messageProcessor/exceptionProessor/    #
+        # monitor, if they are found in the      #
+        # process_dir specified in the .fuzzer   #
+        # file generated by fuzz_prep.py         #
+        ##########################################
+
+        # Assign options to variables, error on anything that's missing/invalid
+        self.processorDirectory = self.fuzzerData.processorDirectory
+        if self.processorDirectory == "default":
+            # Default to fuzzer file folder
+            self.processorDirectory = self.fuzzerFolder
+        else:
+            # Make sure fuzzer file path is prepended
+            self.processorDirectory = os.path.join(self.fuzzerFolder, self.processorDirectory)
+
+        #Create class director, which import/overrides processors as appropriate
+        self.procDirector = ProcDirector(self.processorDirectory,args.prepped_fuzz)
+
+        ########## Launch child monitor thread
+        ### monitor.task = spawned thread
+        ### monitor.crashEvent = threading.Event()
+        #monitor = procDirector.startMonitor(host,fuzzerData.port)
+        self.monitor = self.procDirector.getMonitor(self.host,self.fuzzerData.port)
+
+        if args.xploit:
+            if not args.dumpraw and not args.emulate:
+                self.output("-x/--xploit requires dumpraw||emulate options",RED)
+                sys.exit(-1)
+
+
+        self.logger = None
+        if len(args.logger):
+            self.logger = Logger(args.logger)
+            self.DUMPDIR = args.logger
+
+            
+        self.exceptionProcessor = self.procDirector.exceptionProcessor()
+        self.messageProcessor = self.procDirector.messageProcessor()
+        signal.signal(signal.SIGINT, self.sigint_handler)
+
+        ########## Begin fuzzing
+        self.i =  self.MIN_RUN_NUMBER
+        self.failureCount = 0
+        self.loop_len = len(self.SEED_LOOP) # if --loop
+
+        if args.loop:
+            self.seed = 0
+
+        self.potential_crash = 0 
+        self.potential_crash_count = 0
+
+        # sets up currentMessageToFuzz
+        self.fuzzerData.currentMessageToFuzz = 0
+        self.curr_seed_base = self.MIN_RUN_NUMBER 
+        #round robin
+        if args.rrobin:
+            self.round_robin_iter_len = args.rrobin
+
+        if args.harness:
+            self.output("Fuzzing Packets: %s"%self.fuzzerData.messagesToFuzz)
+            self.output("Starting harness_trace, if any!",ORANGE)
+            self.monitor.start_harness_trace()
+
+
+
+    # Takes a socket and outbound data packet (byteArray), sends it out.
+    # If debug mode is enabled, we print out the raw bytes
+    def sendPacket(self,connection, addr, outPacketData):
+        if connection.type == socket.SOCK_STREAM:
+            connection.send(outPacketData)
+        else:
+            connection.sendto(outPacketData,addr)
+
+        if DEBUG_MODE:
+            self.output("\tSent %d byte packet" % (len(outPacketData)))
+            self.output("\tRaw Bytes: %s" % repr(Message.serializeByteArray(outPacketData)))
+
+
+    def receivePacket(self,connection, addr, bytesToRead,msgNum):
+        readBufSize = 4096
+        if self.args.timeout:
+            connection.settimeout(self.args.timeout)
+        else:
+            connection.settimeout(self.fuzzerData.receiveTimeout)
+
+        if connection.type == socket.SOCK_STREAM or connection.type == socket.SOCK_DGRAM:
+            response = bytearray(connection.recv(readBufSize))
+        else:
+            try:
+                response = bytearray(connection.recvfrom(readBufSize))
+            except:
+                return
         
-    if fuzzerData.proto == "tcp" or fuzzerData.proto == "udp":
-        # Specifying source port or address is only supported for tcp and udp currently
-        if fuzzerData.sourcePort != -1:
-            # Only support right now for tcp or udp, but bind source port address to something
-            # specific if requested
-            if fuzzerData.sourceIP != "" or fuzzerData.sourceIP != "0.0.0.0":
-                connection.bind((fuzzerData.sourceIP, fuzzerData.sourcePort))
+        
+        if len(response) == 0:
+            # If 0 bytes are recv'd, the server has closed the connection
+            # per python documentation
+            raise ConnectionClosedException("Server has closed the connection on msg:%d"%msgNum)
+        if bytesToRead > readBufSize:
+            # If we're trying to read > 4096, don't actually bother trying to guarantee we'll read 4096
+            # Just keep reading in 4096 chunks until we should have read enough, and then return
+            # whether or not it's as much data as expected
+            i = readBufSize
+            while i < bytesToRead:
+                response += bytearray(connection.recv(readBufSize))
+                i += readBufSize
+                
+        if DEBUG_MODE:
+            self.output("\tReceived %d bytes" % (len(response)))
+            self.output("\tReceived: %s" % repr(response))
+        return response
+
+
+
+    def makeConnector(self,host,port,messageProcessor,seed):
+        if not self.socket_family:
+            if match(r'^\d{1,3}(\.\d{1,3}){3}$',host):
+                self.socket_family = socket.AF_INET
+            elif match(r'([0-9A-Fa-f]{0,4}:)*(:[0-9A-Fa-f]{1,4})+',host) \
+            and host.find("::") == host.rfind("::"):
+                self.socket_family = socket.AF_INET6
             else:
-                # User only specified a port, not an IP
-                connection.bind(('0.0.0.0', fuzzerData.sourcePort))
-        elif fuzzerData.sourceIP != "" and fuzzerData.sourceIP != "0.0.0.0":
-            # No port was specified, so 0 should auto-select
-            connection.bind((fuzzerData.sourceIP, 0))
-    if fuzzerData.proto == "tcp":
-        # Now that we've had a chance to bind as necessary, connect
-        connection.connect(addr)
+                self.socket_family = socket.AF_UNIX
 
-    i = 0   
-    for i in range(0, len(fuzzerData.messageCollection.messages)):
-        message = fuzzerData.messageCollection.messages[i]
+        if self.socket_family == socket.AF_UNIX:     
+            addr = (host)
+        else:
+            addr = (host,self.fuzzerData.port)
+
+        # Call messageprocessor preconnect callback if it exists
+        try:
+            self.messageProcessor.preConnect(seed, host, self.fuzzerData.port) 
+        except AttributeError:
+            pass
+
+        # for TCP/UDP/RAW support
+        if self.fuzzerData.proto == "tcp":
+            connection = socket.socket(self.socket_family,socket.SOCK_STREAM)
+            if self.fuzzerData.clientMode == True:
+                connection.connect(addr)
+            else:
+                connection.bind(addr)
+                connection.listen(5) # should there be more? Variable?  
+                
+        elif self.fuzzerData.proto == "udp":
+            connection = socket.socket(self.socket_family,socket.SOCK_DGRAM)
+        # PROTO = dictionary of assorted L3 proto => proto number
+        # e.g. "icmp" => 1
+        elif self.fuzzerData.proto in PROTO:
+            connection = socket.socket(self.socket_family,socket.SOCK_RAW,PROTO[self.fuzzerData.proto]) 
+            if self.fuzzerData.proto != "raw":
+                connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
+            addr = (host,0)
+            try:
+                connection = socket.socket(self.socket_family,socket.SOCK_RAW,PROTO[self.fuzzerData.proto]) 
+            except Exception as e:
+                self.output(e,YELLOW)
+                self.output(e,"Unable to create raw socket, please verify that you have sudo access",RED)
+                sys.exit(0)
+
+        elif self.fuzzerData.proto == "L2raw":
+            connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
+            #self.output("Creating Raw/Promisc socket")
+            addr = (host,0)
+        else:
+            addr = (host,0)
+            try:
+                #test if it's a valid number 
+                connection = socket.socket(self.socket_family,socket.SOCK_RAW,int(self.fuzzerData.proto)) 
+                connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
+            except Exception as e:
+                self.output(e,YELLOW)
+                self.output(e,"Unable to create raw socket, please verify that you have sudo access",RED)
+                sys.exit(0)
+
+        if host == "255.255.255.255":
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+        if self.logger:
+            self.logger.resetForNewRun()
+
+        return (connection,addr)
+         
+
+
+    # Perform a fuzz run.  Radamsa will be invoked after the
+    # preprocessMessage() handler for the messages specified by
+    # messagesToFuzz so that any changes made by the handler will be
+    # reflected in the fuzzed messages.  If messagesToFuzz is None, no
+    # fuzzing is performed.
+    # If seed is -1, don't perform fuzzing (test run)
+    def performRun(self,fuzzerData, host, messageProcessor, seed=-1):
         
-        # Go ahead and revert any fuzzing or messageprocessor changes before proceeding
-        message.resetAlteredMessage()
+        # socket of appropriate type, based of host/port 
+        if not self.args.emulate:
+            if not self.serverSocket or fuzzerData.clientMode: 
+                # if we're in server Mode, don't create a new connection
+                connection,addr = self.makeConnector(host,fuzzerData.port,messageProcessor,seed)   
+        else:
+            connection = None
+        
+        if not self.serverSocket and not fuzzerData.clientMode:
+            # save server connection
+            self.serverSocket = connection
+            self.serverAddr = addr
+        
+        i = 0   
 
-        if message.isOutbound():
+        if self.args.rrobin: 
+            currentMessageToFuzz = fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]
+            for i in range(0, len(fuzzerData.messageCollection.messages)):
+                try:
+                    if i == int(currentMessageToFuzz): 
+                        for j in range(0,len(fuzzerData.messageCollection[i].subcomponents)):
+                            if float("%d.%d" % (i,j)) == currentMessageToFuzz: 
+                                fuzzerData.messageCollection[i].subcomponents[j].isFuzzed = True
+                            else:
+                                fuzzerData.messageCollection[i].subcomponents[j].isFuzzed = False
+                    else:
+                        for j in range(0,len(fuzzerData.messageCollection[i].subcomponents)):
+                            fuzzerData.messageCollection[i].subcomponents[j].isFuzzed = False
+
+                except Exception as e:
+                    print str(e) 
+
+        # wait for the connection
+        if not fuzzerData.clientMode:
+            connection,addr = self.serverSocket.accept()
+            # do a quick check to validate that it's actually our target? 
+            if addr[0] != host:
+                print "Unknown Connection received, ignoring! (%s,%d)"%addr  
+                connection.close()
+                return -1 
+             
+
+        for i in range(0, len(fuzzerData.messageCollection.messages)):
+            message = fuzzerData.messageCollection[i]
+            
+            # Go ahead and revert any fuzzing or messageprocessor changes before proceeding
+            message.resetAlteredMessage()
+
             # Primarily used for deciding how to handle preFuzz/preSend callbacks
             doesMessageHaveSubcomponents = len(message.subcomponents) > 1
-
-            # Get original subcomponents for outbound callback only once
-            originalSubcomponents = map(lambda subcomponent: subcomponent.getOriginalByteArray(), message.subcomponents)
             
-            if doesMessageHaveSubcomponents:
-                # For message with subcomponents, call prefuzz on fuzzed subcomponents
-                for j in range(0, len(message.subcomponents)):
-                    subcomponent = message.subcomponents[j] 
-                    # Note: we WANT to fetch subcomponents every time on purpose
-                    # This way, if user alters subcomponent[0], it's reflected when
-                    # we call the function for subcomponent[1], etc
-                    actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
-                    prefuzz = messageProcessor.preFuzzSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, originalSubcomponents, actualSubcomponents))
-                    subcomponent.setAlteredByteArray(prefuzz)
-            else:
-                # If no subcomponents, call prefuzz on ENTIRE message
-                actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
-                prefuzz = messageProcessor.preFuzzProcess(actualSubcomponents[0], MessageProcessorExtraParams(i, -1, message.isFuzzed, originalSubcomponents, actualSubcomponents))
-                message.subcomponents[0].setAlteredByteArray(prefuzz)
-
-            # Skip fuzzing for seed == -1
-            if seed > -1:
-                # Now run the fuzzer for each fuzzed subcomponent
+            if message.direction == fuzzerData.fuzzDirection:                
+                sub_fuzzed = False
                 for subcomponent in message.subcomponents:
                     if subcomponent.isFuzzed:
-                        radamsa = subprocess.Popen([RADAMSA, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        byteArray = subcomponent.getAlteredByteArray()
-                        (fuzzedByteArray, error_output) = radamsa.communicate(input=byteArray)
-                        fuzzedByteArray = bytearray(fuzzedByteArray)
-                        subcomponent.setAlteredByteArray(fuzzedByteArray)
-            
-            # Fuzzing has now been done if this message is fuzzed
-            # Always call preSend() regardless for subcomponents if there are any
-            if doesMessageHaveSubcomponents:
-                for j in range(0, len(message.subcomponents)):
-                    subcomponent = message.subcomponents[j] 
-                    # See preFuzz above - we ALWAYS regather this to catch any updates between
-                    # callbacks from the user
-                    actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
-                    presend = messageProcessor.preSendSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, originalSubcomponents, actualSubcomponents))
-                    subcomponent.setAlteredByteArray(presend)
-            
-            # Always let the user make any final modifications pre-send, fuzzed or not
-            actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
-            byteArrayToSend = messageProcessor.preSendProcess(message.getAlteredMessage(), MessageProcessorExtraParams(i, -1, message.isFuzzed, originalSubcomponents, actualSubcomponents))
+                        sub_fuzzed = True
+                if sub_fuzzed:
+                    if doesMessageHaveSubcomponents:
+                        # Pre-fuzz on individual subcomponents first
+                        for subcomponent in message.subcomponents:
+                            if subcomponent.isFuzzed:
+                            # Note: we WANT to fetch subcomponents every time on purpose
+                                # This way, if user alters subcomponent[0], it's reflected when
+                                # we call the function for subcomponent[1], etc
+                                allSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
+                                prefuzz = messageProcessor.preFuzzSubcomponentProcess(subcomponent.getAlteredByteArray(), allSubcomponents)
+                                subcomponent.setAlteredByteArray(prefuzz)
+                    else:
+                        # This is done for convenience
+                        # legacy users / users not dealing with subcomponents can ignore the
+                        # whole subcomponent thing by not having any, but
+                        # lets us keep the backend straight
+                        prefuzz = messageProcessor.preFuzzProcess(message.subcomponents[0].getAlteredByteArray())
+                        message.subcomponents[0].isFuzzed = True
+                        message.subcomponents[0].setAlteredByteArray(prefuzz)
 
-            if args.dumpraw:
-                loc = os.path.join(DUMPDIR,"%d-outbound-seed-%d"%(i,args.dumpraw))
-                if message.isFuzzed:
-                    loc+="-fuzzed"
-                with open(loc,"wb") as f:
-                    f.write(repr(str(byteArrayToSend))[1:-1])
+                    # Skip fuzzing for seed == -1
+                    if seed > -1:
+                        # Now run the fuzzer for each fuzzed subcomponent
+                        for subcomponent in message.subcomponents:
+                            if subcomponent.isFuzzed:
+                                radamsa = subprocess.Popen([RADAMSA, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                tmpByteArray = subcomponent.getAlteredByteArray()
+                                (fuzzedByteArray, error_output) = radamsa.communicate(input=tmpByteArray)
+                                fuzzedByteArray = bytearray(fuzzedByteArray)
+                                # skip/abort run..
+                                if subcomponent.fixedSize > 0:
+                                    fuzzedByteArray = fuzzedByteArray[0:subcomponent.fixedSize]
 
-            sendPacket(connection, addr, byteArrayToSend)
-        else: 
-            # Receiving packet from server
-            messageByteArray = message.getAlteredMessage()
-            data = receivePacket(connection,addr,len(messageByteArray))
-            if data == messageByteArray:
-                print "\tReceived expected response"
-            if logger != None:
-                logger.setReceivedMessageData(i, data)
+                                subcomponent.setAlteredByteArray(fuzzedByteArray)
+                
+                    # Fuzzing has now been done if this message is fuzzed
+                    # Always call preSend() regardless for subcomponents if there are any
+                    if doesMessageHaveSubcomponents:
+                        for subcomponent in message.subcomponents:
+                            # See preFuzz above - we ALWAYS regather this to catch any updates between
+                            # callbacks from the user
+                            allSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
+                            presend = messageProcessor.preSendSubcomponentProcess(subcomponent.getAlteredByteArray(), allSubcomponents)
+                            subcomponent.setAlteredByteArray(presend)
+                    
+
+                    old_len = len(message.getOriginalMessage())
+                    new_len = len(message.getAlteredMessage()) 
+                    if message.getOriginalMessage() != message.getAlteredMessage(): 
+                        self.output("Message %d, seed: %d, old len: %d, new len %d" %(i,seed,old_len,new_len),CYAN)
+                        #self.output(repr(message.getOriginalMessage()))
+                        #self.output(repr(message.getAlteredMessage()),GREEN)
+                    if self.campaign:
+                        self.saved_fuzzy_message = message.getAlteredMessage()
+
+                
+                # Always let the user make any final modifications pre-send, fuzzed or not
+                byteArrayToSend = messageProcessor.preSendProcess(message.getAlteredMessage())
+
+                # send Regardless if fuzzed or not
+                if not self.args.emulate:
+                    try:
+                        self.sendPacket(connection, addr, byteArrayToSend)
+                    except Exception as e:
+                        print e
+                        message.resetAlteredMessage()
+
+
+                message.resetAlteredMessage()
+
+                if len(self.DUMPDIR) and (self.args.dumpraw or self.args.emulate):
+                    msgnum = self.args.dumpraw or self.args.emulate
+                    loc = os.path.join(self.logger._folderPath,"%d-outbound-seed-%d"%(i,msgnum))
+                    with open(loc,"wb") as f:
+                        f.write(repr(byteArrayToSend)[1:-1])
+
+                if self.args.dumpraw or self.args.emulate:
+                    msgnum = self.args.dumpraw or self.args.emulate
+                    if self.args.xploit:
+                        # split up really long lines
+                        for i in range(0,len(byteArrayToSend),self.POC_PACKET_COLS):
+                            try:
+                                self.poc_packet_cache.append(("outbound",byteArrayToSend[i:i+self.POC_PACKET_COLS]))
+                            except:
+                                self.poc_packet_cache.append(("outbound",byteArrayToSend[i:]))
+
+            elif message.direction != fuzzerData.fuzzDirection: 
+                messageByteArray = message.getAlteredMessage()
+                if not self.args.emulate:
+                    data = self.receivePacket(connection,addr,len(messageByteArray),i)
+                    #if data == messageByteArray:
+                        #self.output("\tReceived expected response",GREEN)
+                    self.messageProcessor.postReceiveProcess(data, messageByteArray, i)
+
+                if len(self.DUMPDIR) and (self.args.dumpraw or self.args.emulate):
+                    msgnum = self.args.dumpraw or self.args.emulate
+                    loc = os.path.join(self.logger._folderPath,"%d-inbound-seed-%d"%(i,msgnum))
+                    with open(loc,"wb") as f:
+                        f.write(repr(str(message.getOriginalMessage()))[1:-1])
+
+                if self.args.dumpraw or self.args.emulate:
+                    if self.args.xploit:
+                        msg = message.getOriginalMessage()
+                        for i in range(0,len(msg),self.POC_PACKET_COLS):
+                            try:
+                                self.poc_packet_cache.append(("inbound",msg[i:i+self.POC_PACKET_COLS]))
+                            except:
+                                self.poc_packet_cache.append(("inbound",msg[i:]))
+
+            i += 1
         
-            messageProcessor.postReceiveProcess(data, MessageProcessorExtraParams(i, -1, False, [messageByteArray], [data]))
+        try: 
+            connection.close()
+        except:
+            pass
 
-            if args.dumpraw:
-                loc = os.path.join(DUMPDIR,"%d-inbound-seed-%d"%(i,args.dumpraw))
-                with open(loc,"wb") as f:
-                    f.write(repr(str(data))[1:-1])
+            
+    def generate_poc(self,IP): 
+        IP = self.args.target_host
+        PORT = self.fuzzerData.port
+        skeleton=os.path.abspath( os.path.join(__file__, "../util/skeleton_poc.py") )
+        with open(skeleton,"r") as f:
+            with open("%s"%self.args.xploit,"wb") as e:
+                # for readability
+                #print self.poc_packet_cache
+                poc_buffer = str(self.poc_packet_cache).replace("')), (", "')),\n(") 
+                poc_buffer = poc_buffer.replace("[(","[\n(")
+                poc_buffer = poc_buffer.replace(")]",")\n]")
+                e.write(f.read()%(IP,PORT,str(poc_buffer))) 
+                self.poc_packet_cache = [] # clear it out, yo
 
-        if logger != None:  
-            logger.setHighestMessageNumber(i)
-        
 
-        i += 1
+    # Set up signal handler for CTRL+C and signals from child monitor thread
+    # since this is the same signal, we use the monitor.crashEvent flag()
+    # to differentiate between a CTRL+C and a interrupt_main() call from child 
+    def sigint_handler(self,signal,idk=None):
+        if not self.monitor.crashEvent.isSet():
+            if self.campaign:
+                try:
+                    self.camp_sock.close()
+                    self.ipc_sock.close()
+                except:
+                    pass
+            # No event = quit
+            # Quit on ctrl-c
+            self.output("\nSIGINT received, stopping\n",RED)
+            if signal > 0:
+                sys.exit(0)
+            else:
+                return
+
     
-    connection.close()
+    def fuzz(self):
+        args = self.args
+        fuzzerData = self.fuzzerData
+        host = self.host
+        messageProcessor = self.messageProcessor
 
-# Usage case
-if len(sys.argv) < 3:
-    sys.argv.append('-h')
+        #self.output("\n**Performing test run without fuzzing...",CYAN)
 
-#TODO: add description/license/ascii art print out??
-desc =  "======== The Mutiny Fuzzing Framework ==========" 
-epi = "==" * 24 + '\n'
+        self.output("Entering main fuzzing loop",GREEN)
+        while True:
+            i = self.i 
+            if self.campaign:
+                action = self.camp_sock.recv(4096) 
+                if action[0:2] == "go": 
+                    self.camp_sock.send(str(self.i-1)) # an ack of sorts
+                if action[0:4] == "dump":
+                    # dump the new .fuzzer to a string to send back to campaign
+                    new_fuzzer = deepcopy(self.fuzzerData)
+                    new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
+                    self.camp_sock.send(new_fuzzer.writeToFD())
+                    continue
+                if action[0:3] == "len":
+                    self.camp_sock.send("%s"%len(self.saved_fuzzy_message)) 
+                if action[0:3] == "die":
+                    self.sigint_handler(1)
+                    break
+                     
+            lastMessageCollection = deepcopy(fuzzerData.messageCollection)
+            wasCrashDetected = False
+            timeout_switch = False
+            if args.sleeptime > 0:
+                self.output("\n** Sleeping for %.3f seconds **" % args.sleeptime,BLUE)
+                time.sleep(args.sleeptime)
+            if args.rrobin: 
+                if i % self.round_robin_iter_len == 0 and i > 0:
+                    fuzzerData.rotateNextMessageToFuzz() 
 
-parser = argparse.ArgumentParser(description=desc,epilog=epi)
-parser.add_argument("prepped_fuzz", help="Path to file.fuzzer")
-parser.add_argument("target_host", help="Target to fuzz")
-parser.add_argument("-s","--sleeptime",help="Time to sleep between fuzz cases (float)",type=float,default=0)
-seed_constraint = parser.add_mutually_exclusive_group()
-seed_constraint.add_argument("-r", "--range", help="Run only the specified cases. Acceptable arg formats: [ X | X- | X-Y ], for integers X,Y") 
-seed_constraint.add_argument("-l", "--loop", help="Loop/repeat the given finite number range. Acceptible arg format: [ X | X-Y | X,Y,Z-Q,R | ...]")
-seed_constraint.add_argument("-d", "--dumpraw", help="Test single seed, dump to 'dumpraw' folder",type=int)
+                    if fuzzerData.currentMessageToFuzz == 0:
+                        self.curr_seed_base += self.round_robin_iter_len
 
-verbosity = parser.add_mutually_exclusive_group()
-verbosity.add_argument("-q", "--quiet", help="Don't log the outputs",action="store_true")
-verbosity.add_argument("--logAll", help="Log all the outputs",action="store_true")
+                    self.i = self.curr_seed_base 
+                    i = self.i
+            try:
+                try:
+                    if args.dumpraw or args.emulate:
+                        tmp = 0
+                        if args.dumpraw:
+                            tmp_seed = args.dumpraw 
+                        if args.emulate:
+                            tmp_seed = args.emulate
+                        self.output("\nPerforming single raw dump case: %d" % tmp_seed,CYAN)
+                        self.performRun(fuzzerData, host, messageProcessor, seed=tmp_seed)  
 
-args = parser.parse_args()
+                    elif self.loop_len: 
+                        self.output("\n***Fuzzing with seed %d, Message %s" % (self.SEED_LOOP[i%self.loop_len],fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
+                        self.performRun(fuzzerData, host, messageProcessor, seed=self.SEED_LOOP[i%self.loop_len]) 
+
+                    else:
+                        self.output("\n**Fuzzing with seed %d, Message %s" % (i,fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
+                        status = self.performRun(fuzzerData, host, messageProcessor, seed=i) 
+                        if status == -1:
+                            continue 
+                         
+                except Exception as e:
+                    if self.monitor.crashEvent.isSet():
+                        self.output("Crash event detected",LIME)
+                        self.monitor.crashEvent.clear()
+                        try:  #will error if monitor not enabled 
+                            ip_port = self.monitor.lockExecution() # lock till conditional is met
+                            fuzzerData.port = int(ip_port.split(":")[1])
+                        except:
+                            pass
+                    
+                    if e.__class__ in MessageProcessorExceptions.all:
+                        # If it's a MessageProcessorException, assume the MP raised it during the run
+                        # Otherwise, let the MP know about the exception
+                        raise e
+                    else:
+                        self.exceptionProcessor.processException(e)
+                        # Will not get here if processException raises another exception
+                        self.output("Exception ignored: %s" % (str(e)))
+                
+            except LogCrashException as e:
+                if self.failureCount == 0:
+                    self.output("MessageProcessor detected a crash",RED)
+
+                self.failureCount = self.failureCount + 1
+                wasCrashDetected = True
+
+            except AbortCurrentRunException as e:
+                # Give up on the run early, but continue to the next test
+                # This means the run didn't produce anything meaningful according to the processor
+                timeout_switch = True
+                if str(e).lower().startswith("timed out"): 
+                    if potential_crash_count == 0:
+                        potential_crash = i
+                        potential_crash_count += 1
+                    else:
+                        if potential_crash_count >= (fuzzerData.failureThreshold*3):
+                            self.output("Timeout threshold hit, logging seed %d. Rewinding, sleeping and going."%(potential_crash),YELLOW) 
+                            i = potential_crash + 1
+                            potential_crash = 0
+                            potential_crash_count = 0
+                        else:
+                            self.output("Run aborted: %s" % (str(e)))
+                            potential_crash_count+=1
+
+            except RetryCurrentRunException as e:
+                # Same as AbortCurrentRun but retry the current test rather than skipping to next
+                self.output("Retrying current run: %s" % (str(e)))
+                # Slightly sketchy - a continue *should* just go to the top of the while without changing i
+                continue
+                
+            except LogAndHaltException as e:
+                self.output("Received LogAndHaltException, halting but not logging (quiet mode)",YELLOW)
+                break 
+
+            except LogSleepGoException as e:
+                
+                if i > self.MIN_RUN_NUMBER:
+                    self.output("Locking execution till the monitor signals the process is back!",YELLOW)
+                    try:
+                        ip_port = self.monitor.lockExecution() # lock till conditional is met
+                        fuzzerData.port = int(ip_port.split(":")[1])
+                        self.output("Resuming fuzzing! (Target:%s)"%(ip_port)) 
+                    except Exception as e: #will error if monitor not enabled 
+                        print e
+                        pass
+                else:
+                    break
+
+            except LogLastAndHaltException as e:
+                self.output("Received LogLastAndHaltException, halting but not logging (quiet mode)",YELLOW)
+                break
+            
+            except HaltException as e:
+                self.output("Received HaltException halting",RED)
+                break
+
+            except KeyboardInterrupt:
+                self.sigint_handler(1) 
+
+
+            if wasCrashDetected:
+                if self.failureCount < fuzzerData.failureThreshold:
+                    self.output("Failure %d of %d allowed for seed %d" % (self.failureCount, fuzzerData.failureThreshold, i),YELLOW)
+                    self.output("The test run didn't complete, continuing after %d seconds..." % (fuzzerData.failureTimeout))
+                    time.sleep(fuzzerData.failureTimeout)
+                else:
+                    self.output("Failed %d times, moving to next test." % (self.failureCount))
+                    self.failureCount = 0
+                    self.i += 1
+            else:
+                self.i += 1
+
+
+            if timeout_switch == False:
+                potential_crash = 0
+                potential_crash_count = 0 
+            
+            # Stop if we have a maximum and have hit it
+            if self.MAX_RUN_NUMBER >= 0 and self.i > self.MAX_RUN_NUMBER:
+                if args.harness:
+                    self.monitor.stop_harness_trace()
+                break
+
+            if args.dumpraw or args.emulate:
+                if args.xploit:
+                    self.generate_poc(host) 
+                if args.harness:
+                    self.monitor.stop_harness_trace()
+                break
+
+
+    def output(self,inp,color=None,comms_sock=None):
+        buf = ""
+        if color:
+            buf+=("%s%s%s\n" % (color,str(inp),CLEAR))
+        else:
+            buf+=str(inp)+"\n"
+
+        if comms_sock:
+            sock.send(buf) 
+        else:
+            sys.__stdout__.write(buf)
+            sys.__stdout__.flush()
+
+        try:
+            self.logger.logSimple(inp)
+        except AttributeError:
+            pass
+
+    
+
+#######################################################
+# End MutinyFuzzer Class
+#######################################################
+
+#colors
+RED='\033[31m'
+ORANGE='\033[91m'
+GREEN='\033[92m'
+LIME='\033[99m'
+YELLOW='\033[93m'
+BLUE='\033[94m'
+PURPLE='\033[95m'
+CYAN='\033[96m'
+CLEAR='\033[00m'
+
+def output(self,inp,color=None,comms_sock=None):
+        buf = ""
+        if color:
+            buf+=("%s%s%s\n" % (color,str(inp),CLEAR))
+        else:
+            buf+=str(inp)+"\n"
+
+        if comms_sock:
+            sock.send(buf) 
+        else:
+            sys.__stdout__.write(buf)
+            sys.__stdout__.flush()
+
 
 #----------------------------------------------------
-# Set MIN_RUN_NUMBER and MAX_RUN_NUMBER when provided
+# Set self.MIN_RUN_NUMBER and self.MAX_RUN_NUMBER when provided
 # by the user below
 def getRunNumbersFromArgs(strArgs):
     if "-" in strArgs:
@@ -328,232 +788,48 @@ def getRunNumbersFromArgs(strArgs):
         return (int(strArgs),int(strArgs)) 
 #----------------------------------------------------
 
-#Populate global arguments from parseargs
-fuzzerFilePath = args.prepped_fuzz
-host = args.target_host
-#Assign Lower/Upper bounds on test cases as needed
-if args.range:
-    (MIN_RUN_NUMBER, MAX_RUN_NUMBER) = getRunNumbersFromArgs(args.range)
-elif args.loop:
-    SEED_LOOP = validateNumberRange(args.loop,True) 
 
-#Check for dependency binaries
-if not os.path.exists(RADAMSA):
-    sys.exit("Could not find radamsa in %s... did you build it?" % RADAMSA)
+def get_mutiny_with_args(prog_args):
 
-#Logging options
-isReproduce = False
-logAll = False
+    desc =  "======== The Mutiny Fuzzing Framework ==========" 
+    epi = "==" * 24 + '\n'
 
-if args.quiet:
-    isReproduce = True
-elif args.logAll:
-    logAll = True
+    parser = argparse.ArgumentParser(description=desc,epilog=epi)
+    parser.add_argument("prepped_fuzz", help="Path to file.fuzzer")
+    parser.add_argument("-L","--logger", help="Create a log dir/start logging",default="")
+    parser.add_argument("-i","--target_host", help="Target host to fuzz",default="127.0.0.1")
+    parser.add_argument("-s","--sleeptime",help="Time to sleep between fuzz cases (float)",type=float,default=0)
+    parser.add_argument("-p","--port",help="Override the port included in the .fuzzer file",type=int,default=0)
+    # since -r is already taken -_-. Need a better name for this
+    parser.add_argument("-R","--rrobin",help="Round robin rotate, amount of iter per messageToFuzz",type=int)
+    parser.add_argument("-t","--timeout",help="Time to wait when recv(). Overrides .fuzzer",type=float,default=2)
+    parser.add_argument("-m","--msgtofuzz",help="Fuzz specific msgs. [x|x-y|x,y,z-Q] Overrides .fuzzer")
 
+    seed_constraint = parser.add_mutually_exclusive_group()
+    seed_constraint.add_argument("-r", "--range", help="Run only the specified cases. Acceptable arg formats: [ X | X- | X-Y ], for integers X,Y") 
+    seed_constraint.add_argument("-l", "--loop", help="Loop/repeat the given finite number range. Acceptible arg format: [ X | X-Y | X,Y,Z-Q,R | ...]")
+    seed_constraint.add_argument("-d", "--dumpraw", help="Test single seed, all packets saved seperately",type=int)
+    seed_constraint.add_argument("-e", "--emulate", help="Same as '--dumpraw', but no packets sent",type=int)
+    parser.add_argument("-x","--xploit",help="generate a POC or the given seed. Requires -d or -e")
+    parser.add_argument("-H","--harness",help="trigger target harness start/stop defined in monitor class")
+    parser.add_argument("-c","--campaign",help="Fuzzing Campaign mode, refer to campaign.py for further details, arg==port",type=int)
 
-outputDataFolderPath = os.path.join("%s_%s" % (os.path.splitext(fuzzerFilePath)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
-fuzzerFolder = os.path.abspath(os.path.dirname(fuzzerFilePath))
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument("-q", "--quiet", help="Don't log the self.outputs",action="store_true")
 
-########## Declare variables for scoping, "None"s will be assigned below
-messageProcessor = None
-monitor = None
+    args = parser.parse_args(prog_args)
+    fuzzer = MutinyFuzzer(args)
+    return fuzzer
 
-###Here we read in the fuzzer file into a dictionary for easier variable propagation
-optionDict = {"unfuzzedBytes":{}, "message":[]}
+if __name__ == "__main__":
+    # Usage case
+    if len(sys.argv) < 2:
+        sys.argv.append('-h')
 
-fuzzerData = FuzzerData()
-print "Reading in fuzzer data from %s..." % (fuzzerFilePath)
-fuzzerData.readFromFile(fuzzerFilePath)
+    #TODO: add description/license/ascii art print out??
 
-######## Processor Setup ################
-# The processor just acts as a container #
-# class that will import custom versions #
-# messageProcessor/exceptionProessor/    #
-# monitor, if they are found in the      #
-# process_dir specified in the .fuzzer   #
-# file generated by fuzz_prep.py         #
-##########################################
-
-# Assign options to variables, error on anything that's missing/invalid
-processorDirectory = fuzzerData.processorDirectory
-if processorDirectory == "default":
-    # Default to fuzzer file folder
-    processorDirectory = fuzzerFolder
-else:
-    # Make sure fuzzer file path is prepended
-    processorDirectory = os.path.join(fuzzerFolder, processorDirectory)
-
-#Create class director, which import/overrides processors as appropriate
-procDirector = ProcDirector(processorDirectory)
-
-########## Launch child monitor thread
-    ### monitor.task = spawned thread
-    ### monitor.crashEvent = threading.Event()
-monitor = procDirector.startMonitor(host,fuzzerData.port)
-
-#! make it so logging message does not appear if reproducing (i.e. -r x-y cmdline arg is set)
-logger = None 
-
-if not isReproduce:
-    print "Logging to %s" % (outputDataFolderPath)
-    logger = Logger(outputDataFolderPath)
-
-if args.dumpraw:
-    if not isReproduce:
-        DUMPDIR = outputDataFolderPath
-    else:
-        DUMPDIR = "dumpraw"
-        try:
-            os.mkdir("dumpraw")
-        except:
-            print "Unable to create dumpraw dir"
-            pass
-    
-
-exceptionProcessor = procDirector.exceptionProcessor()
-messageProcessor = procDirector.messageProcessor()
-
-# Set up signal handler for CTRL+C and signals from child monitor thread
-# since this is the same signal, we use the monitor.crashEvent flag()
-# to differentiate between a CTRL+C and a interrupt_main() call from child 
-def sigint_handler(signal, frame):
-    if not monitor.crashEvent.isSet():
-        # No event = quit
-        # Quit on ctrl-c
-        print "\nSIGINT received, stopping\n"
-        sys.exit(0)
-
-signal.signal(signal.SIGINT, sigint_handler)
-
-########## Begin fuzzing
-i = MIN_RUN_NUMBER-1 if fuzzerData.shouldPerformTestRun else MIN_RUN_NUMBER
-failureCount = 0
-loop_len = len(SEED_LOOP) # if --loop
-
-while True:
-    lastMessageCollection = deepcopy(fuzzerData.messageCollection)
-    wasCrashDetected = False
-    print "\n** Sleeping for %.3f seconds **" % args.sleeptime
-    time.sleep(args.sleeptime)
-    
+    fuzzer = get_mutiny_with_args(sys.argv[1:])
     try:
-        try:
-            if args.dumpraw:
-                print "\n\nPerforming single raw dump case: %d" % args.dumpraw
-                performRun(fuzzerData, host, logger, messageProcessor, seed=args.dumpraw)  
-            elif i == MIN_RUN_NUMBER-1:
-                print "\n\nPerforming test run without fuzzing..."
-                performRun(fuzzerData, host, logger, messageProcessor, seed=-1) 
-            elif loop_len: 
-                print "\n\nFuzzing with seed %d" % (SEED_LOOP[i%loop_len])
-                performRun(fuzzerData, host, logger, messageProcessor, seed=SEED_LOOP[i%loop_len]) 
-            else:
-                print "\n\nFuzzing with seed %d" % (i)
-                performRun(fuzzerData, host, logger, messageProcessor, seed=i) 
-            #if --quiet, (logger==None) => AttributeError
-            if logAll:
-                try:
-                    logger.outputLog(i, fuzzerData.messageCollection, "LogAll ")
-                except AttributeError:
-                    pass
-                 
-        except Exception as e:
-            if monitor.crashEvent.isSet():
-                print "Crash event detected"
-                try:
-                    logger.outputLog(i, fuzzerData.messageCollection, "Crash event detected")
-                    #exit()
-                except AttributeError: 
-                    pass
-                monitor.crashEvent.clear()
-
-            elif logAll:
-                try:
-                    logger.outputLog(i, fuzzerData.messageCollection, "LogAll ")
-                except AttributeError:
-                    pass
-            
-            if e.__class__ in MessageProcessorExceptions.all:
-                # If it's a MessageProcessorException, assume the MP raised it during the run
-                # Otherwise, let the MP know about the exception
-                raise e
-            else:
-                exceptionProcessor.processException(e)
-                # Will not get here if processException raises another exception
-                print "Exception ignored: %s" % (str(e))
-        
-    except LogCrashException as e:
-        if failureCount == 0:
-            try:
-                print "MessageProcessor detected a crash"
-                logger.outputLog(i, fuzzerData.messageCollection, str(e))
-            except AttributeError:  
-                pass   
-
-        if logAll:
-            try:
-                logger.outputLog(i, fuzzerData.messageCollection, "LogAll ")
-            except AttributeError:
-                pass
-
-        failureCount = failureCount + 1
-        wasCrashDetected = True
-
-    except AbortCurrentRunException as e:
-        # Give up on the run early, but continue to the next test
-        # This means the run didn't produce anything meaningful according to the processor
-        print "Run aborted: %s" % (str(e))
-    
-    except RetryCurrentRunException as e:
-        # Same as AbortCurrentRun but retry the current test rather than skipping to next
-        print "Retrying current run: %s" % (str(e))
-        # Slightly sketchy - a continue *should* just go to the top of the while without changing i
-        continue
-        
-    except LogAndHaltException as e:
-        if logger:
-            logger.outputLog(i, fuzzerData.messageCollection, str(e))
-            print "Received LogAndHaltException, logging and halting"
-        else:
-            print "Received LogAndHaltException, halting but not logging (quiet mode)"
-        exit()
-        
-    except LogLastAndHaltException as e:
-        if logger:
-            if i > MIN_RUN_NUMBER:
-                print "Received LogLastAndHaltException, logging last run and halting"
-                if MIN_RUN_NUMBER == MAX_RUN_NUMBER:
-                    #in case only 1 case is run
-                    logger.outputLastLog(i, lastMessageCollection, str(e))
-                    print "Logged case %d" % i
-                else:
-                    logger.outputLastLog(i-1, lastMessageCollection, str(e))
-            else:
-                print "Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting"
-        else:
-            print "Received LogLastAndHaltException, halting but not logging (quiet mode)"
-        exit()
-
-    except HaltException as e:
-        print "Received HaltException halting"
-        exit()
-
-    if wasCrashDetected:
-        if failureCount < fuzzerData.failureThreshold:
-            print "Failure %d of %d allowed for seed %d" % (failureCount, fuzzerData.failureThreshold, i)
-            print "The test run didn't complete, continuing after %d seconds..." % (fuzzerData.failureTimeout)
-            time.sleep(fuzzerData.failureTimeout)
-        else:
-            print "Failed %d times, moving to next test." % (failureCount)
-            failureCount = 0
-            i += 1
-    else:
-        i += 1
-    
-    # Stop if we have a maximum and have hit it
-    if MAX_RUN_NUMBER >= 0 and i > MAX_RUN_NUMBER:
-        exit()
-
-    if args.dumpraw:
-        exit()
-        
+        fuzzer.fuzz()
+    except KeyboardInterrupt:
+        fuzzer.sigint_handler(1) 
