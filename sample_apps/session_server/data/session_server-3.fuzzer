@@ -1,0 +1,32 @@
+# Directory containing any custom exception/message/monitor processors
+# This should be either an absolute path or relative to the .fuzzer file
+# If set to "default", Mutiny will use any processors in the same
+# folder as the .fuzzer file
+processor_dir default
+# Number of times to retry a test case causing a crash
+failureThreshold 3
+# How long to wait between retrying test cases causing a crash
+failureTimeout 5
+# How long for recv() to block when waiting on data from server
+receiveTimeout 1.0
+# Whether to perform an unfuzzed test run before fuzzing
+shouldPerformTestRun 1
+# Protocol (udp or tcp)
+proto tcp
+# Port number to connect to
+port 2500
+# Port number to connect from
+sourcePort -1
+# Source IP to connect from
+sourceIP 0.0.0.0
+
+# The actual messages in the conversation
+# Each contains a message to be sent to or from the server, printably-formatted
+outbound 'auth\n'
+inbound '92\n'
+outbound 'do_stuff 92\n'
+inbound 'OK\n'
+outbound fuzz 'do_stuff 92\n'
+inbound 'OK\n'
+outbound 'quit 92\n'
+inbound 'OK\n'
