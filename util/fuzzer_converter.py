@@ -43,10 +43,9 @@ inFileDesc = sys.stdin
 outFileDesc = sys.stdout 
 
 # If we get file paths instead, fix them up
+# Have to do outfile lower down or we'll blow away an output file we might be fixing up
 if args.infile:
     inFileDesc = open(args.infile, "r")
-if args.outfile:
-    outFileDesc = open(args.outfile, "w")
 
 if args.action == "list":
     fuzzerData = FuzzerData()
@@ -69,6 +68,8 @@ elif args.action in ["fuzzer2bin", "bin2fuzzer"]:
             print("Message number out of range: {0}".format(args.messagenum))
             exit(1)
         
+        if args.outfile:
+            outFileDesc = open(args.outfile, "w")
         outFileDesc.write(fuzzerData.messageCollection.messages[args.messagenum].getOriginalMessage())
     elif args.action == "bin2fuzzer":
         if not args.outfile and not args.fuzzerfile:
@@ -94,6 +95,8 @@ elif args.action in ["fuzzer2bin", "bin2fuzzer"]:
             exit(1)
         message = fuzzerData.messageCollection.messages[args.messagenum]
         message.setMessageFrom(Message.Format.Raw, messageData, message.isFuzzed)
+        if args.outfile:
+            outFileDesc = open(args.outfile, "w")
         fuzzerData.writeToFD(outFileDesc)
 
 # Clean up file descriptors
