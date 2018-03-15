@@ -184,7 +184,16 @@ class Message(object):
         firstQuote = serializedData.find("'")
         secondQuote = serializedData.rfind("'")
         if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
-            raise RuntimeError("Invalid message data, no message found")
+            # Sometimes repr() uses double quotes, 
+            # particularly when message only contains single quotes
+            if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
+                firstQuote = serializedData.find('"')
+                secondQuote = serializedData.rfind('"')
+
+                # If quotes _still_ aren't found, there's no message
+                if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
+                    raise RuntimeError("Invalid message data, no message found")
+
         # Pull out everything, quotes and all, and deserialize it
         messageData = serializedData[firstQuote:secondQuote+1]
         # Process the args
