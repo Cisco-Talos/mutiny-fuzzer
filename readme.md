@@ -1,3 +1,11 @@
+# Quickstart: Mutiny tutorial
+
+Blog post here:
+* http://blog.talosintelligence.com/2018/01/tutorial-mutiny-fuzzing-framework-and.html
+
+Links to this YouTube video demo:
+* https://www.youtube.com/watch?v=FZyR6MgJCUs
+
 # Mutiny Fuzzing Framework
 
 The Mutiny Fuzzing Framework is a network fuzzer that operates by replaying
