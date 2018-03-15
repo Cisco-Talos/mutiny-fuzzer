@@ -167,8 +167,18 @@ class Message(object):
     def _extractMessageComponents(self, serializedData):
         # Just assume everything from the first single quote to the end is the message
         firstQuote = serializedData.find("'")
-        if firstQuote == -1:
-            raise RuntimeError("Invalid message data, no message found")
+        secondQuote = serializedData.rfind("'")
+        if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
+            # Sometimes repr() uses double quotes, 
+            # particularly when message only contains single quotes
+            if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
+                firstQuote = serializedData.find('"')
+                secondQuote = serializedData.rfind('"')
+
+                # If quotes _still_ aren't found, there's no message
+                if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
+                    raise RuntimeError("Invalid message data, no message found")
+
         # Pull out everything, quotes and all, and deserialize it
         messageData = serializedData[firstQuote:]
         # Process the args
