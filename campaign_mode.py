@@ -44,6 +44,7 @@ import socket
 import os.path
 import multiprocessing
 
+from Queue import Empty
 from mutiny import *
 
 IP = "127.0.0.1"
@@ -52,8 +53,10 @@ PORT = 61600
 HARNESS_IP = "0.0.0.0"
 HARNESS_PORT = 6969
 
-TIMEOUT = .01 
-FUZZERTIMEOUT = .5
+SOCKTIMEOUT = .01 
+FUZZERTIMEOUT = .01
+CASES_PER_FUZZER = 100000
+
 logger = None
 
 process_respawn_time = 1
@@ -75,29 +78,73 @@ else:
 
 target_ip = sys.argv[2]
 
+#! Distributed fuzzing
+#! add flag for fuzzer file source (https get checks on queue)
+#! each campaign can just check a different url for .fuzzers.
+#! for example --controller 10.10.10.1/fuzzer2 , fuzzer3....  
+
+#! also can have --threads 4 to multithread. 
+#! .fuzzers gotten from campaign controller will be 
+#! distributed to the thread via the fuzzer_queue 
+
+#! how to check for core count?
+
 
 def main(logs):
 
     done_switch = multiprocessing.Event()
     crash_queue = multiprocessing.Queue()
+    thread_count = 1
 
+    # single .fuzzer mode
     if fuzzer_file:
         launch_thread = multiprocessing.Process(target = launch_fuzzer,
                                                 args=(fuzzer_file,
                                                       PORT,
-                                                      10000,
+                                                      CASES_PER_FUZZER,
                                                       FUZZERTIMEOUT,
                                                       done_switch))
+    # fuzzer corpus mode.
     elif fuzzer_dir:
+        fuzzer_queue = multiprocessing.Queue()
+
+        # prevent's dups from entering the fuzzer_queue
+        append_lock = multiprocessing.Lock()
+
+        print "[^_^] Reading in fuzzers from %s" % fuzzer_dir
+        for f in os.listdir(fuzzer_dir):
+            if ".fuzzer" in f:
+                fname = os.path.join(fuzzer_dir,f)
+                fuzzer_queue.put(fname)
+                print "[>_>] adding %s" % fname
+                time.sleep(1) # takes time to add to queue?!?
+        
+        
+
+        # where completed fuzzers go.
+        processed_dir = os.path.join(fuzzer_dir,"processed_fuzzers")
+        try:
+            os.mkdir(processed_dir)
+        except:
+            pass
+        
+        while fuzzer_queue.empty(): 
+            print "[?.x] Couldn't find any .fuzzer files in %s what do?" % fuzzer_dir 
+            sys.exit()
+
+        #! multithread will requeire a harness thread and control_sock per
         launch_thread = multiprocessing.Process(target = launch_corpus,
                                                 args=(fuzzer_dir,
+                                                      append_lock,
+                                                      fuzzer_queue,
                                                       PORT,
-                                                      100,
+                                                      CASES_PER_FUZZER,
                                                       FUZZERTIMEOUT,
                                                       done_switch))
+
+
     launch_thread.daemon=True
     launch_thread.start()
-
 
     harness_thread = multiprocessing.Process(target = crash_listener,
                                              args = (crash_queue,
@@ -106,6 +153,9 @@ def main(logs):
 
 
     time.sleep(1)
+
+
+    #! Will have to break this into a separate thread soon.
     try:
         control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
         control_sock.connect((IP,PORT)) 
@@ -175,7 +225,7 @@ def main(logs):
 
 def get_bytes(sock):
     ret = ""
-    sock.settimeout(TIMEOUT)
+    sock.settimeout(SOCKTIMEOUT)
     try:
         while True:
             tmp = sock.recv(65535)
@@ -208,6 +258,10 @@ def crash_listener(crash_queue,done_switch):
         if done_switch.is_set():
             break
 
+def get_controller_fuzzer():
+    #! TODO     
+    return None
+
 
 def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
     
@@ -225,21 +279,49 @@ def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
     done_switch.set()
 
 
-def launch_corpus(fuzzer_dir,control_port,amt_per_fuzzer,timeout,done_switch):
+def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzzer,timeout,done_switch):
 
     lowerbound=0
     upperbound=amt_per_fuzzer
+    
+    repeat_counter = 0
 
-    fuzzer_list = os.listdir(fuzzer_dir)
-    if len(fuzzer_list) < 0:
-        print "[?.x] Couldn't find any .fuzzer files... what do?"    
-        print fuzzer_queue
-        sys.exit()
+    processed_dir = os.path.join(fuzzer_dir,"processed_fuzzers")
 
-    for fuzzer in fuzzer_list:
+    while True:
+        # check for .fuzzer files in controller
+        if fuzzer_queue.empty():    
+            if append_lock.acquire(block=True,timeout=4):
+                new_fuzzer_list = os.listdir(fuzzer_dir)
+                new_fuzzer_list.remove("processed_fuzzers") # 
+                for f in new_fuzzer_list:
+                    fuzzer_queue.put(os.path.join(fuzzer_dir,f)) 
+                append_lock.release()
+            
+        # if still empty, check controller 
+        if fuzzer_queue.empty():
+            tmp = get_controller_fuzzer() 
+            if tmp:
+                fuzzer_name,fuzzer_contents = tmp 
+                fuzzer_name = os.path.join(fuzzer_dir,fuzzer_name)
+                with open(fuzzer_name,"w") as f:
+                    f.write(fuzzer_contents)
+            
+        # if still empty, keep fuzzing with same fuzzer
+        if not fuzzer_queue.empty():
+            fuzzer = fuzzer_queue.get()
+            repeat_counter = 0
+        else:
+            repeat_counter += 1
+            processed = os.path.join(processed_dir,os.path.basename(fuzzer))
+            os.rename(processed,fuzzer) 
+
+        lowerbound = (amt_per_fuzzer * repeat_counter) 
+        upperbound = (amt_per_fuzzer * (repeat_counter+1)) 
+
         try:
             if fuzzer[-7:] == ".fuzzer": 
-                args = [os.path.join(fuzzer_dir,fuzzer),
+                args = [fuzzer,
                         "--campaign",str(control_port),
                         "-r","%d-%d"%(lowerbound,upperbound),
                         "-t",str(timeout), 
@@ -261,6 +343,9 @@ def launch_corpus(fuzzer_dir,control_port,amt_per_fuzzer,timeout,done_switch):
             logger.write(str(e))
             logger.flush()
     
+        # Move over to processed_fuzzer dir 
+        os.rename(fuzzer,os.path.join(processed_dir,os.path.basename(fuzzer))) 
+
     done_switch.set()
     print "[^_^] DONE!"
 

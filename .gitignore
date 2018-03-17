@@ -1,5 +1,8 @@
 radamsa-*/*
 *.swp
+*.swo
 *.pyc
 *_logs*
-sadsox
+fuzzer_log.txt
+harness.log
+harness_cmds.txt

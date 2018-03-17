@@ -58,7 +58,7 @@ fi
 trap break_loop INT
 
 break_loop() {
-    echo "[^_^] Exiting simple harness"
+    echo "[^_^] Exiting basic harness"
     exit
 }
 
