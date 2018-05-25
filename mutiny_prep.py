@@ -263,7 +263,7 @@ fuzzerData.proto = prompt("Which protocol?", answers=["tcp", "udp", "layer3" ], 
 # for finding out which L3 protocol
 if fuzzerData.proto == "layer3":
     fuzzerData.proto = prompt("Which layer3 protocol?", answers=["icmp","igmp","ipv4","tcp","igp","udp","ipv6","ipv6-route","ipv6-frag","gre", \
-                                                                 "dsr","esp","ipv6-icmp","ipv6-nonxt","ipv6-opts","eigrp","ospf","mtp","l2tp","sctp","manual"],defualtIndex=0)
+                                                                 "dsr","esp","ipv6-icmp","ipv6-nonxt","ipv6-opts","eigrp","ospf","mtp","l2tp","sctp","manual"],defaultIndex=0)
 # in the case that it's not in the above list
 if fuzzerData.proto == "manual":
     fuzzerData.proto = promptInt("What is the L3 protocol number?", defaultResponse=0)    
