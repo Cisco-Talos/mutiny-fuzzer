@@ -47,7 +47,7 @@ import sys
 import threading
 import time
 import argparse
-
+import ssl
 from copy import deepcopy
 from backend.proc_director import ProcDirector
 from backend.fuzzer_types import Message, MessageCollection, Logger
@@ -73,7 +73,7 @@ DUMPDIR = ""
 # Takes a socket and outbound data packet (byteArray), sends it out.
 # If debug mode is enabled, we print out the raw bytes
 def sendPacket(connection, addr, outPacketData):
-
+    connection.settimeout(fuzzerData.receiveTimeout)
     if connection.type == socket.SOCK_STREAM:
         connection.send(outPacketData)
     else:
@@ -154,6 +154,18 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
     if fuzzerData.proto == "tcp":
         connection = socket.socket(socket_family,socket.SOCK_STREAM)
         # Don't connect yet, until after we do any binding below
+    elif fuzzerData.proto == "tls":
+        try:
+            _create_unverified_https_context = ssl._create_unverified_context
+        except AttributeError:
+            # Legacy Python that doesn't verify HTTPS certificates by default
+            pass
+        else:
+            # Handle target environment that doesn't support HTTPS verification
+            ssl._create_default_https_context = _create_unverified_https_context
+        tcpConnection = socket.socket(socket_family,socket.SOCK_STREAM)
+        connection = ssl.wrap_socket(tcpConnection)
+        # Don't connect yet, until after we do any binding below
     elif fuzzerData.proto == "udp":
         connection = socket.socket(socket_family,socket.SOCK_DGRAM)
     # PROTO = dictionary of assorted L3 proto => proto number
@@ -182,7 +194,7 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
             print "Unable to create raw socket, please verify that you have sudo access"
             sys.exit(0)
         
-    if fuzzerData.proto == "tcp" or fuzzerData.proto == "udp":
+    if fuzzerData.proto == "tcp" or fuzzerData.proto == "udp" or fuzzerData.proto == "tls":
         # Specifying source port or address is only supported for tcp and udp currently
         if fuzzerData.sourcePort != -1:
             # Only support right now for tcp or udp, but bind source port address to something
@@ -195,7 +207,7 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
         elif fuzzerData.sourceIP != "" and fuzzerData.sourceIP != "0.0.0.0":
             # No port was specified, so 0 should auto-select
             connection.bind((fuzzerData.sourceIP, 0))
-    if fuzzerData.proto == "tcp":
+    if fuzzerData.proto == "tcp" or fuzzerData.proto == "tls":
         # Now that we've had a chance to bind as necessary, connect
         connection.connect(addr)
 
