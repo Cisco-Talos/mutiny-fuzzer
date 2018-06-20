@@ -84,7 +84,8 @@ class Monitor(object):
         
         # uncomment if you want monitoring, change testing_bin to whatever.
         while not len(ret_val):
-            ret_val = self.lockCondition("remote_tcp_open","127.0.0.1",8888)
+            #ret_val = self.lockCondition("remote_tcp_open","127.0.0.1",8888)
+            ret_val = self.lockCondition("remote_tcp_open",self.targetIP,self.targetPort)
             #print "RET_VAL:%s" % ret_val
             time.sleep(1) 
 
