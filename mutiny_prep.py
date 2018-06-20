@@ -41,10 +41,12 @@ from backend.fuzzer_types import Message
 from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange
 from backend.fuzzerdata import FuzzerData
 import scapy.all
+import hashlib
 
 args = None
 inputFilePath = ""
 pkt_session_counter = 0
+corpus_dict = {}
 
 GREEN = "\033[92m"
 CLEAR = "\033[00m"
@@ -333,8 +335,27 @@ def main():
         # Default to no
         if not args.corpus and prompt("\nWould you like to auto-generate a .fuzzer for each client message?", defaultIndex=1):
             promptAndOutput(fuzzerData,getNextMessage(0, Message.Direction.Outbound,fuzzerData), autogenerateAllClient=True)
+
         elif args.corpus:
-            promptAndOutput(fuzzerData,getNextMessage(0, Message.Direction.Outbound,fuzzerData), autogenerateAllClient=False)
+            for i in range(0,len(fuzzerData.messageCollection.messages)): 
+                m = hashlib.md5()
+                if fuzzerData.messageCollection.messages[i].direction == Message.Direction.Outbound:
+                    hashbuf = ""
+                    for submsg in fuzzerData.messageCollection.messages[i].subcomponents:
+                        hashbuf+=submsg.message
+                    md5hash = str(m.hexdigest()) 
+                    m.update(hashbuf)
+                
+                    # increment counter
+                    try:
+                        corpus_dict[m.digest()]+=1
+                    except Exception as e:
+                        print e
+                        # add new entry and dump fuzzer. 
+                        print "New md5hash: %s"%m.hexdigest()
+                        corpus_dict[m.digest()] = 1
+                        promptAndOutput(fuzzerData,i,autogenerateAllClient=False)
+
         else:
             # Always run once
             outputMessageNum = promptAndOutput(fuzzerData,getNextMessage(0, Message.Direction.Outbound,fuzzerData))
@@ -389,11 +410,6 @@ def promptAndOutput(fuzzerData,outputMessageNum, autogenerateAllClient=False):
                     for subcomponent in fuzzerData.messageCollection.messages[messageIndex].subcomponents:
                         subcomponent.isFuzzed = True
                 break
-
-    elif args.corpus:
-        outputFilenameEnd = str(outputMessageNum)
-        fuzzerData.messageCollection.messages[outputMessageNum].subcomponents[0].isFuzzed = True
-
     else:
         outputFilenameEnd = str(outputMessageNum)
         for subcomponent in fuzzerData.messageCollection.messages[outputMessageNum].subcomponents:

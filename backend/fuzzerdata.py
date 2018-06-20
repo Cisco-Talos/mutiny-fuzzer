@@ -433,33 +433,44 @@ class FuzzerData(object):
             output_buffer += "# The actual messages in the conversation\n# Each contains a message to be sent to or from the server, printably-formatted\n"
             output_buffer += "# Note, if you want to fuzz a submessage (designated by 'more'), then that submessage must also be marked 'fuzz'\n"  
         for i in range(0, finalMessageNum+1):
+            output_buffer += "#msg(%d)\n"%i
             message = self.messageCollection[i]
             if not defaultComments:
                 output_buffer += self._getComments("message{0}".format(i))
            
-            #code to make default dumps look nicer (at least for ascii captures)
-            old_newline = 0
-            tmp_buf = message.getSerialized().replace("'","\'")
-            #print "TEMP_BUF: %s" % tmp_buf
-            newline = tmp_buf.find("\\n")+2
-            if newline > 1: # actualy found a "\n"
-                output_buffer += tmp_buf[:newline] + "'\n"
-                tmp_buf = tmp_buf[newline:]
-                newline = tmp_buf.find("\\n")+2
-            else:
-                output_buffer += tmp_buf
-                continue
+            ascii_count = 0 
+            msg_buff = message.getSerialized()
+            byte_msg_buff = bytearray(msg_buff[1:-1].decode('string_escape'))
+            #print "ORIG_BUF: %s" % msg_buff
+            for byte in byte_msg_buff:
+                if byte >= 0x20 and byte < 0x7F: 
+                    ascii_count+=1
+            ascii_percent = float(ascii_count)/len(byte_msg_buff)
             
-
-            while newline > 1 and newline < len(tmp_buf):
-                output_buffer += "more \'"
-                output_buffer += tmp_buf[:newline] + "'\n"
-                tmp_buf = tmp_buf[newline:]
+            if ascii_percent > .80:
+                #! Fix this or make it a command line option to separate as needed. 
+                old_newline = 0
+                tmp_buf = message.getSerialized()
+                #print "TEMP_BUF: %s" % tmp_buf
                 newline = tmp_buf.find("\\n")+2
+                if newline > 1: # actualy found a "\n"
+                    output_buffer += tmp_buf[:newline] + "'\n"
+                    tmp_buf = tmp_buf[newline:]
+                    newline = tmp_buf.find("\\n")+2
+                else:
+                    output_buffer += tmp_buf
+                    continue
 
-            if len(tmp_buf) > 2:
-                output_buffer+="more \'%s" % tmp_buf
-                output_buffer+="\n"
+                while newline > 1 and newline < len(tmp_buf):
+                    output_buffer += "more \'"
+                    output_buffer += tmp_buf[:newline] + "'\n"
+                    tmp_buf = tmp_buf[newline:]
+                    newline = tmp_buf.find("\\n")+2
+
+                if len(tmp_buf) > 2:
+                    output_buffer+="more \'%s" % tmp_buf
+            else:
+                output_buffer += msg_buff
 
             output_buffer+="\n"
 

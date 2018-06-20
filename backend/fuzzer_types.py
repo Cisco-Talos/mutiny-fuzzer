@@ -132,8 +132,10 @@ class Message(object):
     
     @classmethod
     def serializeByteArray(cls, byteArray):
-        # repr() appears to do exactly what we want here
-        return repr(str(byteArray))
+        ret = repr(str(byteArray))
+        ret = ret[1:-1].replace("\'","\\x27")
+        ret = "'" + ret + "'"
+        return ret
     
     @classmethod
     def deserializeByteArray(cls, string):
