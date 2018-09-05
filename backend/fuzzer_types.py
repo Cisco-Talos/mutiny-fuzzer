@@ -149,7 +149,6 @@ class Message(object):
     
     @classmethod
     def serializeByteArray(cls, byteArray):
-        # repr() appears to do exactly what we want here
         return repr(str(byteArray))
     
     @classmethod
@@ -181,21 +180,35 @@ class Message(object):
 
     # Utility function for setFromSerialized and appendFromSerialized below
     def _extractMessageComponents(self, serializedData):
-        firstQuote = serializedData.find("'")
-        secondQuote = serializedData.rfind("'")
-        if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
-            # Sometimes repr() uses double quotes, 
-            # particularly when message only contains single quotes
-            if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
-                firstQuote = serializedData.find('"')
-                secondQuote = serializedData.rfind('"')
-
-                # If quotes _still_ aren't found, there's no message
-                if firstQuote == -1 or secondQuote == -1 or firstQuote == secondQuote:
-                    raise RuntimeError("Invalid message data, no message found")
+        firstQuoteSingle = serializedData.find('\'')
+        lastQuoteSingle = serializedData.rfind('\'')
+        firstQuoteDouble = serializedData.find('"')
+        lastQuoteDouble = serializedData.rfind('"')
+        firstQuote = -1
+        lastQuote = -1
+        
+        if firstQuoteSingle == -1 or firstQuoteSingle == lastQuoteSingle:
+            # If no valid single quotes, go double quote
+            firstQuote = firstQuoteDouble
+            lastQuote = lastQuoteDouble
+        elif firstQuoteDouble == -1 or firstQuoteDouble == lastQuoteDouble:
+            # If no valid double quotes, go single quote
+            firstQuote = firstQuoteSingle
+            lastQuote = lastQuoteSingle
+        elif firstQuoteSingle < firstQuoteDouble:
+            # If both are valid, go single if further out
+            firstQuote = firstQuoteSingle
+            lastQuote = lastQuoteSingle
+        else:
+            # Both are valid but double is further out
+            firstQuote = firstQuoteDouble
+            lastQuote = lastQuoteDouble
+        
+        if firstQuote == -1 or lastQuote == -1 or firstQuote == lastQuote:
+            raise RuntimeError("Invalid message data, no message found")
 
         # Pull out everything, quotes and all, and deserialize it
-        messageData = serializedData[firstQuote:secondQuote+1]
+        messageData = serializedData[firstQuote:lastQuote+1]
         # Process the args
         serializedData = serializedData[:firstQuote].split(" ")
         

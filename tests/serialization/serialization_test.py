@@ -61,6 +61,7 @@ def testString(inputValue):
         serialized = message.getSerialized()
         message.setFromSerialized(serialized)
         deserialized = message.getOriginalMessage()
+        print("\tSerialized: {0}".format(serialized))
         print("\tBefore: {0}".format(str(inputValue)))
         print("\t After: {0}".format(str(deserialized)))
     except Exception as e:
@@ -79,5 +80,8 @@ def main():
     # Strings that contain only single quotes apparently get wrapped in double quotes
     testString("test'")
 
+    # Found to be causing problems
+    testString("<?xml version='1.0' ?><stream:stream to='testwebsite.com' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>")
+    
 if __name__ == "__main__":
     main()
