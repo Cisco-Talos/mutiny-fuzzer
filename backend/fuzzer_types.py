@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -52,6 +52,10 @@ class MessageSubComponent(object):
         # This includes both fuzzed messages and messages the user
         # has altered with messageprocessor callbacks
         self._altered = message
+
+    ## Used for dumping edited fuzzers 
+    def setOriginalByteArray(self,byteArray):
+        self.message = byteArray 
     
     def setAlteredByteArray(self, byteArray):
         self._altered = byteArray
@@ -75,6 +79,7 @@ class Message(object):
     def __init__(self):
         self.attributes = []
         self.direction = -1
+        self.ascii_percent = 0
         # Submessages have their own attributes/fuzzed/etc. Whereas linebreaks don't.  
         # outbound 'msg'
         #          'moreMessge'
@@ -132,10 +137,13 @@ class Message(object):
     
     @classmethod
     def serializeByteArray(cls, byteArray):
+        # repr() appears to do exactly what we want here
+        # sanitize internals though.
         ret = repr(str(byteArray))
-        ret = ret[1:-1].replace("\'","\\x27")
-        ret = "'" + ret + "'"
-        return ret
+        
+        ret = ret[1:-1].replace("\'","\\x27") # strip outer quotes/sanatize internal
+        ret = "'" + ret + "'" # replace outer
+        return ret 
     
     @classmethod
     def deserializeByteArray(cls, string):

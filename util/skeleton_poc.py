@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -38,14 +38,26 @@ import struct
 import sys
 
 IP = "%s"
-PORT = %d
+PORT = %d 
 timeout = .3
 strLen = 200
+#colors
+RED='\033[31m'
+ORANGE='\033[91m'
+GREEN='\033[92m'
+LIME='\033[99m'
+YELLOW='\033[93m'
+BLUE='\033[94m'
+PURPLE='\033[95m'
+CYAN='\033[96m'
+CLEAR='\033[00m'
+
+
 
 # each entry in packet list should be:
 # (0, msg) or (1,msg) for the direction
 packet_list = %s
-
+ 
 def main():
     tmp = ""
 
@@ -59,24 +71,61 @@ def main():
         sys.exit()
     
     count = 0
+    outbuff = ""
     for direction,packet in packet_list:
+        
         #print "\033[96mDirection:" + str(inbound) + ",Packet#:" + str(count) + "\033[00m - " + repr(packet)
         count+=1
         if direction == "inbound": 
-            tmp = sock.recv(65535)
+
+            if len(outbuff):
+                #print "[!.1] " + repr(outbuff)
+                sock.send(outbuff)
+                outbuff = ""
+
+            tmp = ""
+            while True:
+                try:
+                    tmp += sock.recv(65535)
+                    if len(tmp):
+                        break
+                except:
+                    break
+
             if tmp:
                 try:
-                    print "[<.<] " + repr(tmp[0:strLen])
+                    print YELLOW + "[<.<] " + repr(tmp[0:strLen]) + CLEAR
                 except:
-                    print "[<.<] " + repr(tmp)
+                    print YELLOW + "[<.<] " + repr(tmp) + CLEAR
                 if len(tmp) > strLen: 
                     print "[...]"
+
         elif direction == "outbound": 
-            print "[>.>] " + repr(packet) 
             if len(packet) > strLen: 
-                print "[...]"
-            sock.send(packet)
+                print PURPLE + "[>.>] " + repr(packet[0:strLen]) + "[...]" + CLEAR
+            else:
+                print PURPLE + "[>.>] " + repr(packet) + CLEAR
+            outbuff += packet
             
+    
+    if direction == "inbound":
+        tmp = ""
+        while True:
+            try:
+                tmp += sock.recv(65535)
+            except:
+                break
+
+        if len(tmp):
+            print YELLOW + "[!_!] Final Resp:\n" + repr(tmp) + CLEAR
+        else:
+            print RED + "[;_;] No resp...." + CLEAR
+    elif direction == "outbound":
+        sock.send(outbuff)
+
+    print "[^_^] Thanks for stopping by~"
+
+
 
 if __name__ == "__main__":
     main()

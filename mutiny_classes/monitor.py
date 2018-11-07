@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -52,41 +52,30 @@ class Monitor(object):
 
     def __init__(self):
         self.crashEvent = None
-        self.harness_port = 9999
+        self.harness_port = -1
         self.targetIP = ""
         self.targetPort = 0
         
     # This function will run asynchronously in a different thread to monitor the host
-    def monitorTarget(self, targetIP, targetPort, signalMain=None):
+    def monitorTarget(self, targetIP, targetPort, lock_condition):
         self.targetIP = targetIP
         self.targetPort = targetPort     
+        self.lock_condition = self.lock_condition
 
         self.retIP = targetIP
         self.retPort = targetPort        
-
-        # Can do something like:
-        # while True:
-        #   read file, etc
-        #   if errorConditionHasOccurred:
-        #       signalMain()
-        #
-        # Calling signalMain() at any time will indicate to Mutiny
-        # that the target has crashed and a crash should be logged
-        pass
     
     def die(self):
         return (self.retIP,self.retPort)
 
-    
     # just keep execution locked up here until unlockCondition is met
     def lockExecution(self):
         ret_val = ""
-        
+        print "Monitor locking execution till condition met" 
         # uncomment if you want monitoring, change testing_bin to whatever.
         while not len(ret_val):
-            #ret_val = self.lockCondition("remote_tcp_open","127.0.0.1",8888)
-            ret_val = self.lockCondition("remote_tcp_open",self.targetIP,self.targetPort)
-            #print "RET_VAL:%s" % ret_val
+            #ret_val = self.lockCondition("always_unlocked")
+            ret_val = self.lockCondition(self.lock_condition,self.targetIP,self.targetPort)
             time.sleep(1) 
 
         return ret_val
@@ -99,11 +88,10 @@ class Monitor(object):
                     "remote_tcp_open": self.remote_tcp_open,
                     "local_process_listen":self.local_process_listen,
                     "always_unlocked":self.always_unlocked,
+                    "ping_test": self.ping_test,
                     }
 
         return lock_dict[condition](args) 
-
-
 
     # OS: Any            
     # This conditional will unlock when it finds the requested port to be open for the 
@@ -120,9 +108,13 @@ class Monitor(object):
         except:
             pass
 
-        testsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        if ":" in IP:
+            testsock = socket.socket(socket.AF_INET6,socket.SOCK_STREAM)
+        else:
+            testsock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         testsock.settimeout(timeout)
         testsock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+
         try:
             testsock.connect((IP,PORT))
             testsock.close() 
@@ -162,12 +154,40 @@ class Monitor(object):
             return ""
 
         return ""
-              
 
     # Just here for a placeholder if you don't want a lock condition
     def always_unlocked(self,*args):
         return "127.0.0.1:0"
             
+
+    # in case you need ping.
+    def ping_test(self,args): 
+        IP = args[0]
+        PORT = 0
+        timeout = .2
+        msg = "\x80\x00\x00\x00\x00\x00\x00\x00"
+
+        if ":" in IP:
+            fam = socket.AF_INET6
+            proto = socket.IPPROTO_ICMPV6 
+        else:
+            fam = socket.AF_INET
+            proto = socket.IPPROTO_ICMP 
+         
+        ping_sock = socket.socket(fam,socket.SOCK_RAW,proto)
+        #ping_sock.setsockopt(socket.SOL_IP,socket.IP_HDRINCL,1)
+        ping_sock.settimeout(timeout)
+        ping_sock.sendto(msg,(IP,0,0,0))
+        ret_msg,ret_addr = ping_sock.recvfrom(4096)  
+        ping_sock.close()
+         
+        if len(ret_msg):
+            return "%s:%d"%(IP,self.targetPort)   
+        else:   
+            return ""
+          
+
+
     # Used in tandem with an assorted harness on the target.
     # tcp socket but edit as needed
     def harness_signal(self,address,port,command):

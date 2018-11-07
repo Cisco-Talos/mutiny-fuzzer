@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # Base processor for a fuzzing session
 #

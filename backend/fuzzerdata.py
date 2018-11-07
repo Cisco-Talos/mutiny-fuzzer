@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -61,11 +61,11 @@ class FuzzerData(object):
 
         # Are we a client or a server? ( default => client )
         self.clientMode = True 
-        self.firstMessage = True
         self.fuzzDirection = Message.Direction.Outbound 
     
         # Which message are we fuzzing? (used for round robin)
         self.currentMessageToFuzz = None
+        self.currentSubMessageToFuzz = 0
         
         self.receiveTimeout = 1.0
         # Dictionary to save comments made to a .fuzzer file.  Only really does anything if 
@@ -115,10 +115,12 @@ class FuzzerData(object):
         self._unfuzzedBytesStrs[packetNum] = unfuzzedBytesStr
         self.unfuzzedBytes[packetNum] = validateNumberRange(unfuzzedBytesStr)
     
-    '''
+    # Edits the submessage and then clears out the rest. 
     def editCurrentlyFuzzedMessage(self,new_message):
-        self.messageCollection[self.currentMessageToFuzz].setMessageFrom(1,new_message,True)
-    '''
+        currMsg,currSubmsg = str(float(self.messagesToFuzz[self.currentMessageToFuzz])).split(".") 
+        currMsg = int(currMsg)
+        currSubmsg = int(currSubmsg)
+        self.messageCollection[currMsg].subcomponents[currSubmsg].setOriginalByteArray(new_message)
 
     # Prevent anyone tampering with the internal messages to fuzz storage via properties
     @property
@@ -263,6 +265,17 @@ class FuzzerData(object):
                 elif args[0] == "unfuzzedBytes":
                     print("ERROR: It looks like you're using a legacy .fuzzer file with unfuzzedBytes set.  This has been replaced by the new multi-line format.  Please update your .fuzzer file.")
                     sys.exit(-1)
+                # for detecting server or client mode
+                elif args[0] == "commsMode":
+                    if args[1] == "Server":
+                        #print "Fuzzing a client"
+                        self.clientMode = False 
+                        self.fuzzDirection = Message.Direction.Outbound 
+                    elif args[1] == "Client":
+                        #print "Fuzzing Server"
+                        self.clientMode = True 
+                        self.fuzzDirection = Message.Direction.Outbound 
+
                 elif args[0] == "inbound" or args[0] == "outbound":
                     message = Message()
                     message.setFromSerialized(line)
@@ -284,18 +297,7 @@ class FuzzerData(object):
                             message.attributes.append(attr) 
                             #print message.attributes  
         
-                    # for detecting server or client mode
-                    if self.firstMessage:  
-                        self.firstMessage = False
-                        if args[0] == "inbound":
-                            print "SERVER MODE"
-                            self.clientMode = False 
-                            self.fuzzDirection = Message.Direction.Inbound 
-                        elif args[0] == "outbound":
-                            print "ClientER MODE"
-                            self.clientMode = True 
-                            self.fuzzDirection = Message.Direction.Outbound 
-
+                    
                 # "more" means this is another line
                 elif args[0] == "more":
 
@@ -357,13 +359,13 @@ class FuzzerData(object):
             print("File {0} already exists, using {1} instead".format(origFilePath, filePath))
 
         with open(filePath, 'w') as outputFile:
-            self.writeToFD(outputFile, defaultComments=defaultComments, finalMessageNum=finalMessageNum)
+            self.writeToFD(outputFile, defaultComments=defaultComments, finalMessageNum=finalMessageNum, delim="\\n")
         
         return filePath
 
     # Write out the FuzzerData to a specific file descriptor
     # if no file descriptor is given, then we just return the buffer
-    def writeToFD(self, fileDescriptor=None, defaultComments=False, finalMessageNum=-1):
+    def writeToFD(self, fileDescriptor=None, defaultComments=False, finalMessageNum=-1, delim=""):
         output_buffer = ""
 
         # for optional inclusion of processor into .fuzzer
@@ -426,53 +428,73 @@ class FuzzerData(object):
             output_buffer += self._getComments("port")
         output_buffer += "port {0}\n\n".format(self.port)
         
+        # commsMode
+        output_buffer += "commsMode " 
+        output_buffer += "Client\n" if self.clientMode else "Server\n"
+
         # Messages
         if finalMessageNum == -1:
             finalMessageNum = len(self.messageCollection.messages)-1
         if defaultComments:
             output_buffer += "# The actual messages in the conversation\n# Each contains a message to be sent to or from the server, printably-formatted\n"
             output_buffer += "# Note, if you want to fuzz a submessage (designated by 'more'), then that submessage must also be marked 'fuzz'\n"  
+
         for i in range(0, finalMessageNum+1):
-            output_buffer += "#msg(%d)\n"%i
+            
+            submsg_count = 0
             message = self.messageCollection[i]
             if not defaultComments:
                 output_buffer += self._getComments("message{0}".format(i))
-           
+
+            if ("#msg(%d)\n" % i) not in output_buffer: 
+                output_buffer+="#msg(%d)\n" % i
+
             ascii_count = 0 
             msg_buff = message.getSerialized()
             byte_msg_buff = bytearray(msg_buff[1:-1].decode('string_escape'))
             #print "ORIG_BUF: %s" % msg_buff
-            for byte in byte_msg_buff:
-                if byte >= 0x20 and byte < 0x7F: 
-                    ascii_count+=1
-            ascii_percent = float(ascii_count)/len(byte_msg_buff)
+            if delim != "":
+                for byte in byte_msg_buff:
+                    if byte >= 0x20 and byte < 0x7F: 
+                        ascii_count+=1
+                ascii_percent = float(ascii_count)/len(byte_msg_buff)
             
-            if ascii_percent > .80:
-                #! Fix this or make it a command line option to separate as needed. 
-                old_newline = 0
-                tmp_buf = message.getSerialized()
-                #print "TEMP_BUF: %s" % tmp_buf
-                newline = tmp_buf.find("\\n")+2
-                if newline > 1: # actualy found a "\n"
-                    output_buffer += tmp_buf[:newline] + "'\n"
-                    tmp_buf = tmp_buf[newline:]
-                    newline = tmp_buf.find("\\n")+2
-                else:
-                    output_buffer += tmp_buf
-                    continue
+                if ascii_percent > .80:
+                    #! Fix this or make it a command line option to separate as needed. 
+                    tmp_buf = message.getSerialized()
+                    #print "TEMP_BUF: %s" % tmp_buf
+                    delim_loc = tmp_buf.find(delim)+len(delim)
 
-                while newline > 1 and newline < len(tmp_buf):
-                    output_buffer += "more \'"
-                    output_buffer += tmp_buf[:newline] + "'\n"
-                    tmp_buf = tmp_buf[newline:]
-                    newline = tmp_buf.find("\\n")+2
+                    if delim_loc > 1:  
+                        submsg_count+=1
+                        output_buffer += tmp_buf[:delim_loc] + "'\n"
+                        tmp_buf = tmp_buf[delim_loc:]
+                        delim_loc = tmp_buf.find("\\n")+2
+                    else:
+                        output_buffer += tmp_buf
+                        continue
 
-                if len(tmp_buf) > 2:
-                    output_buffer+="more \'%s" % tmp_buf
+                    while delim_loc > 1 and delim_loc < len(tmp_buf):
+                        #if "#msg(%d.%d)\n" % (i,submsg_count) not in output_buffer: 
+                        #    output_buffer+="#msg(%d.%d)\n" % (i,submsg_count)
+                        submsg_count+=1
+                        output_buffer += "more \'"
+                        output_buffer += tmp_buf[:delim_loc] + "'\n"
+                        tmp_buf = tmp_buf[delim_loc:]
+                        delim_loc = tmp_buf.find(delim)+2
+
+                    output_buffer = output_buffer.replace("more ''\n","")
+
+                    if len(tmp_buf) > 2:
+                        if "#msg(%d.%d)\n" % (i,submsg_count) not in output_buffer: 
+                            output_buffer+="#msg(%d.%d)\n" % (i,submsg_count)
+                        submsg_count+=1
+                        output_buffer+="more \'%s" % tmp_buf
+                else: # small ascii percent :(
+                    output_buffer += msg_buff
             else:
                 output_buffer += msg_buff
 
-            output_buffer+="\n"
 
         if not defaultComments:
             output_buffer += self._getComments("endcomments")

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -57,7 +57,7 @@ from backend.fuzzer_types import Message, MessageCollection, Logger
 from mutiny_classes.mutiny_exceptions import *
 
 # Path to Radamsa binary
-RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa-0.3/bin/radamsa") )
+RADAMSA=os.path.abspath( os.path.join(__file__, "..","radamsa-0.3","bin","radamsa") )
 # Whether to print debug info
 DEBUG_MODE=False
 
@@ -75,6 +75,15 @@ class MutinyFuzzer():
         self.SEED_LOOP = []
         # For dumpraw option, dump into log directory by default, else 'dumpraw'
         self.DUMPDIR = ""
+
+        # Output => pretty. Yay.
+        self.banner_messages = ["**********The Mutiny Fuzzing Framework**********",CYAN  + "jaspadar@cisco.com" + \
+                                                                GREEN + " && " \
+                                                              + PURPLE + "liwyatt@cisco.com <(^_^)>"+CLEAR+"|" ]
+        self.important_messages = []
+        self.fuzzer_messages = []
+
+        self.window_height,self.window_width = os.popen('stty size', 'r').read().split()
 
         # used in makeConnector for slight speed up.
         self.socket_family = None
@@ -105,7 +114,10 @@ class MutinyFuzzer():
             self.campaign_port = args.campaign
             self.ipc_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
             self.ipc_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.ipc_sock.bind(("127.0.0.1",self.campaign_port))
+            try:
+                self.ipc_sock.bind(("127.0.0.1",self.campaign_port))
+            except:
+                pass
             self.ipc_sock.listen(1) 
             self.output("Waiting on connection from controlling campaign.py....")
             self.camp_sock,self.camp_sock_addr = self.ipc_sock.accept() 
@@ -118,17 +130,18 @@ class MutinyFuzzer():
         self.isReproduce = True if args.quiet else False 
         
         self.fuzzerData = FuzzerData()
+
         try:
-            self.fuzzerData.readFromFile(self.fuzzerFilePath)
+            self.fuzzerData.readFromFile(self.fuzzerFilePath,args.quiet)
         except Exception as e:
-            print e
+            self.output("Message Error: %s"%(e))
             # must have swapped file/host, oh well  
             self.fuzzerFilePath = args.target_host
             self.fuzzerData.readFromFile(self.fuzzerFilePath)
             self.host = args.prepped_fuzz
             self.args.target_host = args.prepped_fuzz
             
-        self.output("Reading in fuzzer data from %s..." % (self.fuzzerFilePath),CYAN)
+        self.output("[*] Reading in fuzzer data from %s..." % (self.fuzzerFilePath),CYAN)
         self.outputDataFolderPath = os.path.join("%s_%s" % (os.path.splitext(self.fuzzerFilePath)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
         self.fuzzerFolder = os.path.abspath(os.path.dirname(self.fuzzerFilePath))
 
@@ -140,7 +153,7 @@ class MutinyFuzzer():
             try:
                 self.fuzzerData.setMessagesToFuzzFromString(args.msgtofuzz)
             except Exception as e:
-                print str(e)
+                self.output("Message Error: %s"%str(e))
                 exit()
                 
         ######## Processor Setup ################
@@ -162,19 +175,14 @@ class MutinyFuzzer():
             self.processorDirectory = os.path.join(self.fuzzerFolder, self.processorDirectory)
 
         #Create class director, which import/overrides processors as appropriate
-        self.procDirector = ProcDirector(self.processorDirectory,args.prepped_fuzz)
+        self.procDirector = ProcDirector(self.processorDirectory,args.prepped_fuzz,args.forceMsgProc,args.quiet)
 
         ########## Launch child monitor thread
-        ### monitor.task = spawned thread
-        ### monitor.crashEvent = threading.Event()
-        #monitor = procDirector.startMonitor(host,fuzzerData.port)
-        self.monitor = self.procDirector.getMonitor(self.host,self.fuzzerData.port)
-
-        if args.xploit:
-            if not args.dumpraw and not args.emulate:
-                self.output("-x/--xploit requires dumpraw||emulate options",RED)
-                sys.exit(-1)
-
+        #  
+        self.lock_condition = args.lock
+        self.monitor = self.procDirector.getMonitor(self.host,\
+                                                    self.fuzzerData.port,\
+                                                    self.lock_condition)
 
         self.logger = None
         if len(args.logger):
@@ -193,9 +201,6 @@ class MutinyFuzzer():
 
         if args.loop:
             self.seed = 0
-
-        self.potential_crash = 0 
-        self.potential_crash_count = 0
 
         # sets up currentMessageToFuzz
         self.fuzzerData.currentMessageToFuzz = 0
@@ -264,11 +269,12 @@ class MutinyFuzzer():
         if not self.socket_family:
             if match(r'^\d{1,3}(\.\d{1,3}){3}$',host):
                 self.socket_family = socket.AF_INET
-            elif match(r'([0-9A-Fa-f]{0,4}:)*(:[0-9A-Fa-f]{1,4})+',host) \
+            elif match(r'([0-9A-Fa-f]{0,4})*(:[0-9A-Fa-f]{1,4})+',host) \
             and host.find("::") == host.rfind("::"):
                 self.socket_family = socket.AF_INET6
             else:
                 self.socket_family = socket.AF_UNIX
+                print "boop"
 
         if self.socket_family == socket.AF_UNIX:     
             addr = (host)
@@ -285,10 +291,14 @@ class MutinyFuzzer():
         if self.fuzzerData.proto == "tcp":
             connection = socket.socket(self.socket_family,socket.SOCK_STREAM)
             if self.fuzzerData.clientMode == True:
+                #self.output("[*] Connecting to %s:%d"%addr)
                 connection.connect(addr)
             else:
+                self.output("[*] Binding to %s:%d"%addr,)
+                connection.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
                 connection.bind(addr)
                 connection.listen(5) # should there be more? Variable?  
+                
                 
         elif self.fuzzerData.proto == "udp":
             connection = socket.socket(self.socket_family,socket.SOCK_DGRAM)
@@ -369,18 +379,22 @@ class MutinyFuzzer():
                             fuzzerData.messageCollection[i].subcomponents[j].isFuzzed = False
 
                 except Exception as e:
-                    print str(e) 
+                    self.output(str(e)) 
 
         # wait for the connection
         if not fuzzerData.clientMode:
+            self.output("Waiting for connection!") 
             connection,addr = self.serverSocket.accept()
             # do a quick check to validate that it's actually our target? 
+            '''
             if addr[0] != host:
                 print "Unknown Connection received, ignoring! (%s,%d)"%addr  
                 connection.close()
                 return -1 
+            '''
              
 
+        #self.output("boop")
         for i in range(0, len(fuzzerData.messageCollection.messages)):
             message = fuzzerData.messageCollection[i]
             
@@ -392,9 +406,12 @@ class MutinyFuzzer():
             
             if message.direction == fuzzerData.fuzzDirection:                
                 sub_fuzzed = False
+                j = 0
                 for subcomponent in message.subcomponents:
                     if subcomponent.isFuzzed:
                         sub_fuzzed = True
+                    j+=1
+
                 if sub_fuzzed:
                     if doesMessageHaveSubcomponents:
                         # Pre-fuzz on individual subcomponents first
@@ -429,7 +446,9 @@ class MutinyFuzzer():
                                     fuzzedByteArray = fuzzedByteArray[0:subcomponent.fixedSize]
 
                                 subcomponent.setAlteredByteArray(fuzzedByteArray)
-                
+                                if self.campaign:
+                                    self.saved_fuzzy_message = subcomponent.getAlteredByteArray()
+                                    
                     # Fuzzing has now been done if this message is fuzzed
                     # Always call preSend() regardless for subcomponents if there are any
                     if doesMessageHaveSubcomponents:
@@ -439,16 +458,16 @@ class MutinyFuzzer():
                             allSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
                             presend = messageProcessor.preSendSubcomponentProcess(subcomponent.getAlteredByteArray(), allSubcomponents)
                             subcomponent.setAlteredByteArray(presend)
+        
+                    if not doesMessageHaveSubcomponents and self.campaign:
+                            self.saved_fuzzy_message = message.getAlteredMessage()
                     
-
                     old_len = len(message.getOriginalMessage())
                     new_len = len(message.getAlteredMessage()) 
                     if message.getOriginalMessage() != message.getAlteredMessage(): 
-                        self.output("Message %d, seed: %d, old len: %d, new len %d" %(i,seed,old_len,new_len),CYAN)
+                        self.output("Message %s, seed: %d, old len: %d, new len %d" %(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz],seed,old_len,new_len),CYAN)
                         #self.output(repr(message.getOriginalMessage()))
                         #self.output(repr(message.getAlteredMessage()),GREEN)
-                    if self.campaign:
-                        self.saved_fuzzy_message = message.getAlteredMessage()
 
                 
                 # Always let the user make any final modifications pre-send, fuzzed or not
@@ -459,7 +478,7 @@ class MutinyFuzzer():
                     try:
                         self.sendPacket(connection, addr, byteArrayToSend)
                     except Exception as e:
-                        print e
+                        self.output(e)
                         message.resetAlteredMessage()
 
 
@@ -471,15 +490,21 @@ class MutinyFuzzer():
                     with open(loc,"wb") as f:
                         f.write(repr(byteArrayToSend)[1:-1])
 
-                if self.args.dumpraw or self.args.emulate:
-                    msgnum = self.args.dumpraw or self.args.emulate
-                    if self.args.xploit:
-                        # split up really long lines
-                        for i in range(0,len(byteArrayToSend),self.POC_PACKET_COLS):
-                            try:
-                                self.poc_packet_cache.append(("outbound",byteArrayToSend[i:i+self.POC_PACKET_COLS]))
-                            except:
-                                self.poc_packet_cache.append(("outbound",byteArrayToSend[i:]))
+                if self.args.xploit:
+                    msgnum = self.args.dumpraw or self.args.emulate or seed
+                    #self.output("Boop: %d" % msgnum)
+                    if msgnum == 0:
+                        pocmsg = message.getOriginalMessage()
+                    else:
+                        pocmsg = byteArrayToSend
+
+                    for i in range(0,len(pocmsg),self.POC_PACKET_COLS):
+                        try:
+                            # split up really long lines
+                            self.poc_packet_cache.append(("outbound",pocmsg[i:i+self.POC_PACKET_COLS]))
+                        except:
+                            self.poc_packet_cache.append(("outbound",pocmsg[i:]))
+
 
             elif message.direction != fuzzerData.fuzzDirection: 
                 messageByteArray = message.getAlteredMessage()
@@ -495,14 +520,13 @@ class MutinyFuzzer():
                     with open(loc,"wb") as f:
                         f.write(repr(str(message.getOriginalMessage()))[1:-1])
 
-                if self.args.dumpraw or self.args.emulate:
-                    if self.args.xploit:
-                        msg = message.getOriginalMessage()
-                        for i in range(0,len(msg),self.POC_PACKET_COLS):
-                            try:
-                                self.poc_packet_cache.append(("inbound",msg[i:i+self.POC_PACKET_COLS]))
-                            except:
-                                self.poc_packet_cache.append(("inbound",msg[i:]))
+                if self.args.xploit:
+                    msg = message.getOriginalMessage()
+                    for i in range(0,len(msg),self.POC_PACKET_COLS):
+                        try:
+                            self.poc_packet_cache.append(("inbound",msg[i:i+self.POC_PACKET_COLS]))
+                        except:
+                            self.poc_packet_cache.append(("inbound",msg[i:]))
 
             i += 1
         
@@ -512,19 +536,30 @@ class MutinyFuzzer():
             pass
 
             
-    def generate_poc(self,IP): 
+    def generate_poc(self,IP,filename=""): 
+        if filename:
+            fname = filename
+        else:
+            fname = self.args.xploit
+        
         IP = self.args.target_host
         PORT = self.fuzzerData.port
         skeleton=os.path.abspath( os.path.join(__file__, "../util/skeleton_poc.py") )
         with open(skeleton,"r") as f:
-            with open("%s"%self.args.xploit,"wb") as e:
+            with open("%s"%fname,"wb") as e:
                 # for readability
                 #print self.poc_packet_cache
                 poc_buffer = str(self.poc_packet_cache).replace("')), (", "')),\n(") 
                 poc_buffer = poc_buffer.replace("[(","[\n(")
                 poc_buffer = poc_buffer.replace(")]",")\n]")
-                e.write(f.read()%(IP,PORT,str(poc_buffer))) 
+                #self.output("Generate_POC params: %s %d %s"%(IP,PORT,str(poc_buffer))) 
+                inp = f.read()
+                e.write(inp%(str(IP),PORT,str(poc_buffer))) 
                 self.poc_packet_cache = [] # clear it out, yo
+                if not self.campaign:
+                    self.output("[^_^] Generate_POC completed!: %s %s %d"%(fname,IP,PORT)) 
+                
+                
 
 
     # Set up signal handler for CTRL+C and signals from child monitor thread
@@ -552,34 +587,61 @@ class MutinyFuzzer():
         fuzzerData = self.fuzzerData
         host = self.host
         messageProcessor = self.messageProcessor
+        orig_timeout = -1
 
         #self.output("\n**Performing test run without fuzzing...",CYAN)
 
-        self.output("Entering main fuzzing loop",GREEN)
+        self.output("[*] Entering main fuzzing loop (target: %s|%d)"%(host,fuzzerData.port),GREEN)
+        self.monitor.lockExecution() # lock till conditional is met
+        self.output("[*] Target detected, fuzzing.",GREEN)
+        
+        #print "Fuzzing %d-%d" %(self.MIN_RUN_NUMBER,self.MAX_RUN_NUMBER)
         while True:
             i = self.i 
             if self.campaign:
+                #self.output("[m.m] boop",CYAN)
                 action = self.camp_sock.recv(4096) 
+                #self.output("[m.m] doop",CYAN)
                 if action[0:2] == "go": 
-                    self.camp_sock.send(str(self.i-1)) # an ack of sorts
-                if action[0:4] == "dump":
+                    msg = float(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])
+                    m,sm = str(msg).split(".")
+                    resp = "%d,%s,%s"%(i,m,sm)
+                    self.camp_sock.send(resp) # an ack of sorts
+
+                if "delimdump" in action:
                     # dump the new .fuzzer to a string to send back to campaign
+                    self.output("Dumping current seed delim: %d"%(self.i-1))
                     new_fuzzer = deepcopy(self.fuzzerData)
                     new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
-                    self.camp_sock.send(new_fuzzer.writeToFD())
+                    self.camp_sock.send(new_fuzzer.writeToFD(delim="\\n"))
+                    action = ""
                     continue
+
+                if "fulldump" in action:
+                    # dump the new .fuzzer to a string to send back to campaign
+                    self.output("Dumping current seed full: %d"%(self.i-1))
+                    new_fuzzer = deepcopy(self.fuzzerData)
+                    new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
+                    self.camp_sock.send(new_fuzzer.writeToFD(delim=""))
+                    action = ""
+                    continue
+
+
                 if action[0:3] == "len":
                     self.camp_sock.send("%s"%len(self.saved_fuzzy_message)) 
+
                 if action[0:3] == "die":
                     self.sigint_handler(1)
                     break
+            
                      
             lastMessageCollection = deepcopy(fuzzerData.messageCollection)
             wasCrashDetected = False
-            timeout_switch = False
+
             if args.sleeptime > 0:
                 self.output("\n** Sleeping for %.3f seconds **" % args.sleeptime,BLUE)
                 time.sleep(args.sleeptime)
+
             if args.rrobin: 
                 if i % self.round_robin_iter_len == 0 and i > 0:
                     fuzzerData.rotateNextMessageToFuzz() 
@@ -601,12 +663,13 @@ class MutinyFuzzer():
                         self.performRun(fuzzerData, host, messageProcessor, seed=tmp_seed)  
 
                     elif self.loop_len: 
-                        self.output("\n***Fuzzing with seed %d, Message %s" % (self.SEED_LOOP[i%self.loop_len],fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
+                        #self.output("\n***Fuzzing with seed %d, Message %s" % (self.SEED_LOOP[i%self.loop_len],fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
                         self.performRun(fuzzerData, host, messageProcessor, seed=self.SEED_LOOP[i%self.loop_len]) 
 
                     else:
-                        self.output("\n**Fuzzing with seed %d, Message %s" % (i,fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
+                        #self.output("\n**Fuzzing with seed %d, Message %s" % (i,fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
                         status = self.performRun(fuzzerData, host, messageProcessor, seed=i) 
+                        orig_timeout = -1
                         if status == -1:
                             continue 
                          
@@ -626,12 +689,11 @@ class MutinyFuzzer():
                         raise e
                     else:
                         self.exceptionProcessor.processException(e)
-                        # Will not get here if processException raises another exception
-                        self.output("Exception ignored: %s" % (str(e)))
+                        # Will not get here if processException raises another exception self.output("Exception ignored: %s" % (str(e)))
                 
             except LogCrashException as e:
                 if self.failureCount == 0:
-                    self.output("MessageProcessor detected a crash",RED)
+                    self.output("Mutiny detected a crash",RED)
 
                 self.failureCount = self.failureCount + 1
                 wasCrashDetected = True
@@ -639,20 +701,10 @@ class MutinyFuzzer():
             except AbortCurrentRunException as e:
                 # Give up on the run early, but continue to the next test
                 # This means the run didn't produce anything meaningful according to the processor
-                timeout_switch = True
                 if str(e).lower().startswith("timed out"): 
-                    if potential_crash_count == 0:
-                        potential_crash = i
-                        potential_crash_count += 1
-                    else:
-                        if potential_crash_count >= (fuzzerData.failureThreshold*3):
-                            self.output("Timeout threshold hit, logging seed %d. Rewinding, sleeping and going."%(potential_crash),YELLOW) 
-                            i = potential_crash + 1
-                            potential_crash = 0
-                            potential_crash_count = 0
-                        else:
-                            self.output("Run aborted: %s" % (str(e)))
-                            potential_crash_count+=1
+                    if orig_timeout == -1:
+                        orig_timeout = i
+                        #self.output("Timeout Candidate: %d"%orig_timeout)
 
             except RetryCurrentRunException as e:
                 # Same as AbortCurrentRun but retry the current test rather than skipping to next
@@ -665,15 +717,48 @@ class MutinyFuzzer():
                 break 
 
             except LogSleepGoException as e:
-                
                 if i > self.MIN_RUN_NUMBER:
-                    self.output("Locking execution till the monitor signals the process is back!",YELLOW)
+                    curr_time = datetime.datetime.now() 
+
+                    crash_dump_dir = os.path.join(os.getcwd(),"harness_logs","autogen_pocs")
+
+                    try:
+                        os.mkdir(crash_dump_dir)
+                    except:
+                        crash_dump_dir = os.path.join(os.getcwd(),"harness_logs","autogen_pocs")
+                        #self.output("Unable to generate harness logs dir...")
+                        pass 
+
+                    crash_dump_file = os.path.join(os.getcwd(),"mutidumps.txt")
+                     
+                    if orig_timeout == -1:
+                        orig_timeout = i+1
+                    else:
+                        i = orig_timeout   
+
+                    self.output("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i,\
+                                                                                          fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
+
+                    with open(crash_dump_file,"a") as f:
+                        f.write("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i,\
+                                                                                              fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
+                    '''
+                    try:
+                        crash_poc_file = os.path.join(crash_dump_dir,"%s_%d_%s.py"% (os.path.basename(self.fuzzerFilePath),orig_timeout-1,\
+                                                                                     fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
+                        self.generate_poc(host,crash_poc_file)
+                    except Exception as e:
+                        self.output(str(e),RED) 
+                    '''
+                    
+
                     try:
                         ip_port = self.monitor.lockExecution() # lock till conditional is met
                         fuzzerData.port = int(ip_port.split(":")[1])
-                        self.output("Resuming fuzzing! (Target:%s)"%(ip_port)) 
+                        orig_timeout = -1
+                        #self.output("Resuming fuzzing! (Target:%s)"%(ip_port)) 
                     except Exception as e: #will error if monitor not enabled 
-                        print e
+                        self.output(e)
                         pass
                 else:
                     break
@@ -689,11 +774,13 @@ class MutinyFuzzer():
             except KeyboardInterrupt:
                 self.sigint_handler(1) 
 
+            except Exception as e:
+                self.output("Unhandled Exception: %s"%str(e))
 
             if wasCrashDetected:
                 if self.failureCount < fuzzerData.failureThreshold:
-                    self.output("Failure %d of %d allowed for seed %d" % (self.failureCount, fuzzerData.failureThreshold, i),YELLOW)
-                    self.output("The test run didn't complete, continuing after %d seconds..." % (fuzzerData.failureTimeout))
+                    #self.output("Failure %d of %d allowed for seed %d" % (self.failureCount, fuzzerData.failureThreshold, i),YELLOW)
+                    #self.output("The test run didn't complete, continuing after %d seconds..." % (fuzzerData.failureTimeout))
                     time.sleep(fuzzerData.failureTimeout)
                 else:
                     self.output("Failed %d times, moving to next test." % (self.failureCount))
@@ -702,37 +789,79 @@ class MutinyFuzzer():
             else:
                 self.i += 1
 
-
-            if timeout_switch == False:
-                potential_crash = 0
-                potential_crash_count = 0 
-            
             # Stop if we have a maximum and have hit it
             if self.MAX_RUN_NUMBER >= 0 and self.i > self.MAX_RUN_NUMBER:
+                self.output("Hit maximum")
                 if args.harness:
                     self.monitor.stop_harness_trace()
                 break
 
+            if args.xploit:
+                self.generate_poc(host) 
+
             if args.dumpraw or args.emulate:
-                if args.xploit:
-                    self.generate_poc(host) 
                 if args.harness:
                     self.monitor.stop_harness_trace()
                 break
+
+        #self.output("hit end of fuzz loop")
 
 
     def output(self,inp,color=None,comms_sock=None):
+        inp = str(inp)
+        if self.args.quiet:
+            return
+
         buf = ""
         if color:
-            buf+=("%s%s%s\n" % (color,str(inp),CLEAR))
+            buf=("%s%s%s" % (color,str(inp),CLEAR))
         else:
-            buf+=str(inp)+"\n"
+            buf=str(inp)
 
         if comms_sock:
             sock.send(buf) 
         else:
-            sys.__stdout__.write(buf)
+            rows = 0 # keep track of how many rows we've used.
+            rows_left = 0
+            if inp.startswith("Message"):
+                self.fuzzer_messages.append(buf)
+            else:
+                self.important_messages.append(buf)
+
+            os.system('clear')
+            
+            # actually output the msgs.
+            for i in range(0,len(self.banner_messages)):
+                m = self.banner_messages[i]
+                sys.__stdout__.write(m+"\n")
+                rows+=1
+
+            sys.__stdout__.write(("*"*48)+"\n")
             sys.__stdout__.flush()
+            rows+=1
+
+            rows+=6 # for fuzzer_messages
+
+            for i in range(0,len(self.important_messages)):
+                rows_left = int(self.window_height)-rows
+                m = self.important_messages[i]
+                sys.__stdout__.write(m+"\n")
+
+                if i > rows_left:
+                    self.important_messages = self.important_messages[-rows_left:]   
+                    break 
+
+            sys.__stdout__.write(("*"*48)+"\n")
+            
+            for i in range(0,len(self.fuzzer_messages)):
+                m = self.fuzzer_messages[i]
+                sys.__stdout__.write(m+"\n")
+                if i >= 5: 
+                    self.fuzzer_messages = self.fuzzer_messages[-5:]   
+                    break
+
+            sys.__stdout__.flush()
+          
 
         try:
             self.logger.logSimple(inp)
@@ -755,6 +884,7 @@ BLUE='\033[94m'
 PURPLE='\033[95m'
 CYAN='\033[96m'
 CLEAR='\033[00m'
+
 
 def output(self,inp,color=None,comms_sock=None):
         buf = ""
@@ -813,6 +943,8 @@ def get_mutiny_with_args(prog_args):
     parser.add_argument("-x","--xploit",help="generate a POC or the given seed. Requires -d or -e")
     parser.add_argument("-H","--harness",help="trigger target harness start/stop defined in monitor class")
     parser.add_argument("-c","--campaign",help="Fuzzing Campaign mode, refer to campaign.py for further details, arg==port",type=int)
+    parser.add_argument("-k","--lock",help="Determines when to stop/start fuzzing. More info in mutiny_classes/monitor.py.",default="remote_tcp_open")
+    parser.add_argument("-f", "--forceMsgProc", help="Use the default MSG Processor, not those found in fuzzers (good for campaign)",action="store_true")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-q", "--quiet", help="Don't log the self.outputs",action="store_true")

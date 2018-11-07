@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -50,14 +50,14 @@ class ExceptionProcessor(object):
     # Raise the exceptions defined in mutiny_exceptions to cause Mutiny
     # to do different things based on what has occurred
     def processException(self, exception):
-        print str(exception)
+        #print str(exception)
         if isinstance(exception, socket.error):
             if exception.errno == errno.ECONNREFUSED:
                 # Default to assuming this means server is crashed so we're done
                 # raise LogLastAndHaltException("Connection refused: Assuming we crashed the server, logging previous run and halting")
                 raise LogSleepGoException("Connection refused, Logging last, sleeping, and continuting")
             elif "timed out" in str(exception):
-                raise AbortCurrentRunException("Server closed the connection")
+                raise AbortCurrentRunException(str(exception))
             else:
                 if exception.errno:
                     raise AbortCurrentRunException("Unknown socket error: %d" % (exception.errno))
@@ -65,6 +65,8 @@ class ExceptionProcessor(object):
                     raise AbortCurrentRunException("Unknown socket error: %s" % (str(exception)))
         elif isinstance(exception, ConnectionClosedException):
             raise AbortCurrentRunException("Server closed connection: %s" % (str(exception)))
+        elif isinstance(exception, KeyboardInterrupt):
+            raise KeyboardInterrupt
         elif exception.__class__ not in MessageProcessorExceptions.all:
             # Default to logging a crash if we don't recognize the error
             raise LogCrashException(str(exception))

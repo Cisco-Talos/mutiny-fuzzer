@@ -1,4 +1,4 @@
-#!/bin/python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -39,14 +39,15 @@
 import os
 import sys
 import time
-import queue
 import socket
 import os.path
+import datetime
 import multiprocessing
 
 from Queue import Empty
 from mutiny import *
 
+# used for mutiny<->campaign comms
 IP = "127.0.0.1"
 PORT = 61600
 
@@ -55,7 +56,11 @@ HARNESS_PORT = 6969
 
 SOCKTIMEOUT = .01 
 FUZZERTIMEOUT = .01
-CASES_PER_FUZZER = 100000
+CASES_PER_FUZZER = 1000
+# Set in case you want to 
+# skip ahead in the campaign.
+# Eventually this'll be a cmdline opt. 
+SKIP_TO = 0
 
 logger = None
 
@@ -77,6 +82,11 @@ else:
     sys.exit()
 
 target_ip = sys.argv[2]
+
+try:
+    target_port = int(sys.argv[sys.argv.index("--port")+1])
+except Exception as e:
+    target_port = ""
 
 #! Distributed fuzzing
 #! add flag for fuzzer file source (https get checks on queue)
@@ -112,15 +122,29 @@ def main(logs):
         append_lock = multiprocessing.Lock()
 
         print "[^_^] Reading in fuzzers from %s" % fuzzer_dir
-        for f in os.listdir(fuzzer_dir):
-            if ".fuzzer" in f:
-                fname = os.path.join(fuzzer_dir,f)
-                fuzzer_queue.put(fname)
-                print "[>_>] adding %s" % fname
-                time.sleep(1) # takes time to add to queue?!?
-        
-        
+        fuzzer_list = os.listdir(fuzzer_dir)
+        '''
+        try:
+            # we do this to start fuzzing right away.
+            fuzzer_list = fuzzer_list[0:10]
+        except Exception as e:
+            print e
+            pass
+        '''
+         
+        for f in fuzzer_list: 
+            fname = os.path.join(fuzzer_dir,f)
+            if os.path.isdir(fname):
+                continue
 
+            with open(fname,"r") as f:
+                if "outbound fuzz" not in f.read():
+                    continue
+            
+            fuzzer_queue.put(fname)
+            print "[>_>] adding %s" % fname
+            #time.sleep(1) # takes time to add to queue?!?
+        
         # where completed fuzzers go.
         processed_dir = os.path.join(fuzzer_dir,"processed_fuzzers")
         try:
@@ -150,21 +174,27 @@ def main(logs):
                                              args = (crash_queue,
                                                      done_switch))
     harness_thread.start()
-
-
     time.sleep(1)
 
-
-    #! Will have to break this into a separate thread soon.
-    try:
-        control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
-        control_sock.connect((IP,PORT)) 
-    except:
-        print "[;_;] we ded"
-        sys.exit()
-
+    # wait here, don't care, about doing anything else until we
+    # can talk with the mutiny instance.
+    while True:
+        try:
+            control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
+            control_sock.connect((IP,PORT)) 
+        except KeyboardInterrupt:
+            done_switch.set()
+            time.sleep(1)
+            print "[^_^] Campaign mode exited! Thanks for visiting!"
+            sys.exit()
+        except:
+            time.sleep(1)
+            #print "Could not connect to mutiny :("
+    
+    
     control_sock.send("go")            
     try:
+        print "boop"
         while True:
             if done_switch.is_set():
                 try:
@@ -281,8 +311,9 @@ def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
 
 def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzzer,timeout,done_switch):
 
-    lowerbound=0
-    upperbound=amt_per_fuzzer
+
+    lowerbound=SKIP_TO
+    upperbound=lowerbound + amt_per_fuzzer
     
     repeat_counter = 0
 
@@ -313,38 +344,48 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
             repeat_counter = 0
         else:
             repeat_counter += 1
-            processed = os.path.join(processed_dir,os.path.basename(fuzzer))
-            os.rename(processed,fuzzer) 
+            
+            #processed = os.path.join(processed_dir,os.path.basename(fuzzer))
+            #os.rename(processed,fuzzer) 
 
-        lowerbound = (amt_per_fuzzer * repeat_counter) 
-        upperbound = (amt_per_fuzzer * (repeat_counter+1)) 
+        lowerbound = (amt_per_fuzzer * repeat_counter) + SKIP_TO 
+        upperbound = (amt_per_fuzzer * (repeat_counter+1))  + SKIP_TO
 
         try:
-            if fuzzer[-7:] == ".fuzzer": 
-                args = [fuzzer,
-                        "--campaign",str(control_port),
-                        "-r","%d-%d"%(lowerbound,upperbound),
-                        "-t",str(timeout), 
-                        "-i",target_ip
-                ]
-                
-                logger.write("-------------------------------\n")
-                logger.write("Starting on %s (%d-%d)\n" %(fuzzer,lowerbound,upperbound))
-                logger.write("#!")
-                logger.write(str(args))
-                logger.write("-------------------------------\n")
-                logger.flush()
-                
-                fuzzy = get_mutiny_with_args(args)
-                fuzzy.fuzz()
-                fuzzy.sigint_handler(-1)
+            args = [fuzzer,
+                    "--campaign",str(control_port),
+                    "-r","%d-%d"%(lowerbound,upperbound),
+                    #! add this via cmdline...
+                    #"-R","%d"%(amt_per_fuzzer/100),
+                    "-t",str(timeout), 
+                    "-i",target_ip,
+                    "-f"
+            ]
+            
+            if target_port:
+                args.append("--port")
+                args.append(str(target_port))
+            
+            logger.write("-------------------------------\n")
+            logger.write("Starting on %s (%d-%d) @ %s\n" %(fuzzer,lowerbound,\
+                                                          upperbound,datetime.datetime.now()))
+            logger.write("#!")
+            logger.write(str(args))
+            logger.write("-------------------------------\n")
+            logger.flush()
+            
+            fuzzy = get_mutiny_with_args(args)
+            fuzzy.fuzz()
+            fuzzy.sigint_handler(-1)
 
         except Exception as e:
+            print e
             logger.write(str(e))
             logger.flush()
     
         # Move over to processed_fuzzer dir 
-        os.rename(fuzzer,os.path.join(processed_dir,os.path.basename(fuzzer))) 
+        # if we're only doing campaign, I don't fucking care.
+        # os.rename(fuzzer,os.path.join(processed_dir,os.path.basename(fuzzer))) 
 
     done_switch.set()
     print "[^_^] DONE!"

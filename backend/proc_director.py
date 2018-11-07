@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -47,7 +47,7 @@ from threading import Event
 from mutiny_classes.mutiny_exceptions import MessageProcessorExceptions
 
 class ProcDirector(object):
-    def __init__(self, processDir,fuzzerFile):
+    def __init__(self, processDir,fuzzerFile,forceMessageProc,quiet=False):
         self.messageProcessor = None
         self.exceptionProcessor = None
         self.exceptionList = None
@@ -57,19 +57,23 @@ class ProcDirector(object):
         
         baseDir = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir)
         defaultDir = os.path.join(baseDir,self.classDir)
-        fuzzerLoc = os.path.join(baseDir,fuzzerFile)
+        fuzzerLoc = os.path.join(os.getcwd(),fuzzerFile)
 
         filelist = [ "exception_processor","monitor", "message_processor" ]
         
         # First try to load the message processor from the fuzzer itself, and then
         # if that fails, go through the old methods
-        try: 
-            imp.load_source("message_processor",fuzzerLoc)
-            print("Loaded message processor: {0}".format(fuzzerLoc))
-            filelist.remove("message_processor") 
-            os.remove(fuzzerLoc + "c")
-        except:
-            pass
+        if not forceMessageProc:
+            try: 
+                imp.load_source("message_processor",fuzzerLoc)
+                if not quiet:
+                    print("Loaded message processor: {0}".format(fuzzerLoc))
+                filelist.remove("message_processor") 
+                os.remove(fuzzerLoc + "c")
+            except Exception as e:
+                print "[x.x] Could not load %s!" % fuzzerLoc
+                print e
+                pass
 
         # Load all processors, attempting to do custom first then default
         for filename in filelist:
@@ -77,12 +81,14 @@ class ProcDirector(object):
                 # Attempt to load custom processor
                 filepath = os.path.join(processDir, "{0}.py".format(filename))
                 imp.load_source(filename, filepath)
-                print("Loaded custom processor: {0}".format(filepath))
+                if not quiet:
+                    print("Loaded custom processor: {0}".format(filepath))
             except IOError:
                 # On failure, load default
                 filepath = os.path.join(defaultDir, "{0}.py".format(filename))
                 imp.load_source(filename, filepath)
-                print("Loaded default processor: {0}".format(filepath))
+                if not quiet:
+                    print("Loaded default processor: {0}".format(filepath))
                 
         # Set all the appropriate classes to the appropriate modules
         self.messageProcessor = sys.modules['message_processor'].MessageProcessor
@@ -91,29 +97,25 @@ class ProcDirector(object):
         self.crashQueue = Event()
     
     class MonitorWrapper(object):
-        def __init__(self, targetIP, targetPort, monitor):
+        def __init__(self, targetIP, targetPort, condition, monitor):
             # crashDetectedEvent signals main thread on a detected crash,
             # interrupt_main() and CTRL+C, otherwise raise the same signal
             # monitor is the actual user custom monitor that implements monitorTarget
             self.monitor = monitor
             self.crashEvent = threading.Event()
-            self.task = threading.Thread(target=self.monitor.monitorTarget,args=(targetIP,targetPort,self.signalCrashDetectedOnMain))
+            self.task = threading.Thread(target=self.monitor.monitorTarget, \
+                                         args=(targetIP,targetPort,lock_condition))
             self.task.daemon = True
             self.task.start()
 
-        # Don't override this function
-        def signalCrashDetectedOnMain(self):
-            # Raises a KeyboardInterrupt exception on main thread
-            self.crashEvent.set()
-            # Ugly but have to import here for this to work in monitorTarget on a custom processor
-            import thread
-            thread.interrupt_main()
-    
-    def startMonitor(self, host, port):
-        self.monitorWrapper = self.MonitorWrapper(host, port, self.monitor())
+    def startMonitor(self, host, port,condition):
+        self.monitorWrapper = self.MonitorWrapper(host, port, condition, self.monitor())
         return self.monitorWrapper
         
-    def getMonitor(self,host,port):
+    def getMonitor(self,host,port,lock_condition):
         mon = self.monitor()
+        mon.targetPort = port
+        mon.targetIP = host
+        mon.lock_condition = lock_condition
         mon.crashEvent = threading.Event()
         return mon
