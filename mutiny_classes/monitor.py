@@ -118,7 +118,7 @@ class Monitor(object):
         try:
             testsock.connect((IP,PORT))
             testsock.close() 
-            return "%s:%d"%(IP,PORT)   
+            return "%s|%d"%(IP,PORT)   
         except Exception as e:
             if "Connection" not in str(e):
                 print str(e)
@@ -127,7 +127,7 @@ class Monitor(object):
             
     # OS: Linux
     # This conditional will unlock when it discovers the named service (e.g. 'testing_bin')
-    # listening on a local port. It will return the IP and port as such: '127.0.0.1:8307' 
+    # listening on a local port. It will return the IP and port as such: '127.0.0.1|8307' 
     # Arguments: <process_name>
     def local_process_listen(self,args):
         process_name = args[0] 
@@ -148,7 +148,8 @@ class Monitor(object):
             tmp = filter(None,tmp.split(" "))[3] # this should be 'IP:PORT' 
             port = tmp.split(":")[1]
             if int(port) > 0 and int(port) < 65536:
-                return tmp     # e.g. 127.0.0.1:8307
+                tmp = tmp.replace(":","|")
+                return tmp     # e.g. 127.0.0.1|8307
         except Exception as e:
             print e 
             return ""
@@ -157,7 +158,7 @@ class Monitor(object):
 
     # Just here for a placeholder if you don't want a lock condition
     def always_unlocked(self,*args):
-        return "127.0.0.1:0"
+        return "127.0.0.1|0"
             
 
     # in case you need ping.
@@ -182,7 +183,7 @@ class Monitor(object):
         ping_sock.close()
          
         if len(ret_msg):
-            return "%s:%d"%(IP,self.targetPort)   
+            return "%s|%d"%(IP,self.targetPort)   
         else:   
             return ""
           

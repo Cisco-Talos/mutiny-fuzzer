@@ -299,7 +299,8 @@ def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
             "--campaign",str(control_port),
             "-r","0-%d"%amt_per_fuzzer,   
             "-R","%d"%(amt_per_fuzzer/100),
-            "-t",str(timeout) 
+            "-t",str(timeout), 
+            "-i",target_ip
     ]
 
     fuzzy = get_mutiny_with_args(args)

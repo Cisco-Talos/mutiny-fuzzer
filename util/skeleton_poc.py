@@ -61,8 +61,12 @@ packet_list = %s
 def main():
     tmp = ""
 
+    
     try:
-        sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        if ":" in IP:
+            sock = socket.socket(socket.AF_INET6,socket.SOCK_STREAM)
+        else:
+            sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         sock.connect((IP,PORT))
         sock.settimeout(timeout)
     except:
@@ -89,6 +93,10 @@ def main():
                     tmp += sock.recv(65535)
                     if len(tmp):
                         break
+                except KeyboardInterrupt:
+                    print RED + "[;_;] You killed me." + CLEAR
+                    sys.exit()
+                    
                 except:
                     break
 
@@ -110,16 +118,20 @@ def main():
     
     if direction == "inbound":
         tmp = ""
-        while True:
-            try:
-                tmp += sock.recv(65535)
-            except:
-                break
+        try:
+            while True:
+                try:
+                    tmp += sock.recv(65535)
+                except:
+                    break
 
-        if len(tmp):
-            print YELLOW + "[!_!] Final Resp:\n" + repr(tmp) + CLEAR
-        else:
-            print RED + "[;_;] No resp...." + CLEAR
+            if len(tmp):
+                print YELLOW + "[!_!] Final Resp:\n" + repr(tmp) + CLEAR
+            else:
+                print RED + "[;_;] No resp...." + CLEAR
+        except KeyboardInterrupt:
+            print RED + "[;_;] You killed me." + CLEAR
+            
     elif direction == "outbound":
         sock.send(outbuff)
 

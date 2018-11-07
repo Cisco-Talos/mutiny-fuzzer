@@ -679,7 +679,7 @@ class MutinyFuzzer():
                         self.monitor.crashEvent.clear()
                         try:  #will error if monitor not enabled 
                             ip_port = self.monitor.lockExecution() # lock till conditional is met
-                            fuzzerData.port = int(ip_port.split(":")[1])
+                            fuzzerData.port = int(ip_port.split("|")[1])
                         except:
                             pass
                     
@@ -754,7 +754,7 @@ class MutinyFuzzer():
 
                     try:
                         ip_port = self.monitor.lockExecution() # lock till conditional is met
-                        fuzzerData.port = int(ip_port.split(":")[1])
+                        fuzzerData.port = int(ip_port.split("|")[1])
                         orig_timeout = -1
                         #self.output("Resuming fuzzing! (Target:%s)"%(ip_port)) 
                     except Exception as e: #will error if monitor not enabled 
