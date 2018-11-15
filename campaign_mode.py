@@ -55,8 +55,8 @@ HARNESS_IP = "0.0.0.0"
 HARNESS_PORT = 6969
 
 SOCKTIMEOUT = .01 
-FUZZERTIMEOUT = .01
-CASES_PER_FUZZER = 1000
+FUZZERTIMEOUT = .02
+CASES_PER_FUZZER = 40000
 # Set in case you want to 
 # skip ahead in the campaign.
 # Eventually this'll be a cmdline opt. 

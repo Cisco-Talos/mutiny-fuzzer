@@ -114,6 +114,7 @@ class Message(object):
     # createNewSubcomponent - If false, don't create another subcomponent,
     #   instead, append new message data to last subcomponent in message
     def appendMessageFrom(self, sourceType, message, attributes, createNewSubcomponent=True):
+        message = message.rstrip()
         if sourceType == self.Format.CommaSeparatedHex:
             newMessage = bytearray(map(lambda x: x.decode("hex"), message.split(",")))
         elif sourceType == self.Format.Ascii:
@@ -122,7 +123,7 @@ class Message(object):
             newMessage = message
         else:
             raise RuntimeError("Invalid sourceType")
-        
+
         if createNewSubcomponent:
             self.subcomponents.append(MessageSubComponent(newMessage, attributes))
         else:
