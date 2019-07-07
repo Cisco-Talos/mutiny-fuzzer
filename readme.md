@@ -6,6 +6,9 @@ Blog post here:
 Links to this YouTube video demo:
 * https://www.youtube.com/watch?v=FZyR6MgJCUs
 
+For more features geared towards fuzzing campaigns/feedback/harnesses:
+* https://github.com/Cisco-Talos/mutiny-fuzzer/tree/experiment
+
 # Mutiny Fuzzing Framework
 
 The Mutiny Fuzzing Framework is a network fuzzer that operates by replaying
