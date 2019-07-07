@@ -1,0 +1,7 @@
+dynamorio/
+build/*
+*.py[cod]
+*.sw[poqn]
+*.so
+*_testing*
+log*
