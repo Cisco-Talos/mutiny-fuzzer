@@ -84,11 +84,11 @@ try:
 except Exception as e:
     target_port = ""
 
+SKIP_TO = 0
 try:
     SKIP_TO = int(sys.argv[sys.argv.index("--seed")+1])
 except Exception as e:
-    SKIP_TO = ""
-
+    pass
 
 #! Distributed fuzzing
 #! add flag for fuzzer file source (https get checks on queue)
