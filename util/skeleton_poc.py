@@ -60,19 +60,38 @@ packet_list = %s
  
 def main():
     tmp = ""
-
     
-    try:
-        if ":" in IP:
-            sock = socket.socket(socket.AF_INET6,socket.SOCK_STREAM)
-        else:
-            sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        sock.connect((IP,PORT))
-        sock.settimeout(timeout)
-    except:
-        print "[x.x] No connect to " + IP +":" + str(PORT) 
+    if packet_list[0][0] == "outbound":
+        try:
+            if ":" in IP:
+                sock = socket.socket(socket.AF_INET6,socket.SOCK_STREAM)
+            else:
+                sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            sock.connect((IP,PORT))
+            sock.settimeout(timeout)
+        except:
+            print "[x.x] No connect to " + IP +":" + str(PORT)
+            sys.exit()
 
-        sys.exit()
+    elif packet_list[0][0] == "inbound":
+        try:
+            if ":" in IP:
+                serv_sock = socket.socket(socket.AF_INET6,socket.SOCK_STREAM)
+            else:
+                serv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            serv_sock.bind((IP,PORT))
+            serv_sock.listen(1)
+            print "[!.!] Bound to " + IP + ":" + str(PORT)
+            sock,cli_addr = serv_sock.accept()
+            print "[!.!] Connection from %s:%d"%cli_addr
+            sock.settimeout(timeout)
+        except Exception as e:
+            print "[x.x] No connect to " + IP +":" + str(PORT)
+            print e
+            sys.exit()
+    else:
+        print '[x.x] uhhhh? Invalid packetlist, please play again.'
+        sys.exit() 
     
     count = 0
     outbuff = ""

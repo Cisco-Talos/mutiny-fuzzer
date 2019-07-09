@@ -57,10 +57,6 @@ HARNESS_PORT = 6969
 SOCKTIMEOUT = .01 
 FUZZERTIMEOUT = .02
 CASES_PER_FUZZER = 40000
-# Set in case you want to 
-# skip ahead in the campaign.
-# Eventually this'll be a cmdline opt. 
-SKIP_TO = 0
 
 logger = None
 
@@ -87,6 +83,12 @@ try:
     target_port = int(sys.argv[sys.argv.index("--port")+1])
 except Exception as e:
     target_port = ""
+
+try:
+    SKIP_TO = int(sys.argv[sys.argv.index("--seed")+1])
+except Exception as e:
+    SKIP_TO = ""
+
 
 #! Distributed fuzzing
 #! add flag for fuzzer file source (https get checks on queue)
@@ -297,7 +299,7 @@ def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
     
     args = [fuzzer,
             "--campaign",str(control_port),
-            "-r","0-%d"%amt_per_fuzzer,   
+            "-r","%d-"%SKIP_TO
             "-R","%d"%(amt_per_fuzzer/100),
             "-t",str(timeout), 
             "-i",target_ip
