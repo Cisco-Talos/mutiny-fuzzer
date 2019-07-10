@@ -207,6 +207,7 @@ class MutinyFuzzer():
         self.curr_seed_base = self.MIN_RUN_NUMBER 
         #round robin
         if args.rrobin:
+            self.output("Fuzzing Packets: %s"%self.fuzzerData.messagesToFuzz)
             self.round_robin_iter_len = args.rrobin
 
         if args.harness:
@@ -462,16 +463,14 @@ class MutinyFuzzer():
                     if not doesMessageHaveSubcomponents and self.campaign:
                             self.saved_fuzzy_message = message.getAlteredMessage()
                     
-                    old_len = len(message.getOriginalMessage())
-                    new_len = len(message.getAlteredMessage()) 
-                    if message.getOriginalMessage() != message.getAlteredMessage(): 
-                        self.output("Message %s, seed: %d, old len: %d, new len %d" %(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz],seed,old_len,new_len),CYAN)
-                        #self.output(repr(message.getOriginalMessage()))
-                        #self.output(repr(message.getAlteredMessage()),GREEN)
-
+                old_len = len(message.getOriginalMessage())
+                new_len = len(message.getAlteredMessage()) 
+                self.output("Message %s, seed: %d, old len: %d, new len %d" %(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz],seed,old_len,new_len),CYAN)
                 
                 # Always let the user make any final modifications pre-send, fuzzed or not
                 byteArrayToSend = messageProcessor.preSendProcess(message.getAlteredMessage())
+                
+                 
 
                 # send Regardless if fuzzed or not
                 if not self.args.emulate:
