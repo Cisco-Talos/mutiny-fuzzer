@@ -109,6 +109,8 @@ class MutinyFuzzer():
         self.campaign = False
         self.saved_fuzzy_message = ""
 
+        self.mutator = args.mutator
+
         if args.campaign:
             self.campaign = True
             self.campaign_port = args.campaign
@@ -123,8 +125,17 @@ class MutinyFuzzer():
             self.camp_sock,self.camp_sock_addr = self.ipc_sock.accept() 
 
         #Check for dependency binaries
-        if not os.path.exists(RADAMSA):
-            sys.exit("Could not find radamsa in %s... did you build it?" % RADAMSA)
+        try:
+            with open(self.mutator,"rb") as f:
+                pass 
+        except:
+            print "Could not find mutator in %s... did you build it?" % self.mutator 
+            raise
+
+
+        #if args.campaign:
+        #    raise FileNotFoundError("Could not find radamsa in %s... did you build it?" % RADAMSA)
+            
 
         #Logging options
         self.isReproduce = True if args.quiet else False 
@@ -275,7 +286,6 @@ class MutinyFuzzer():
                 self.socket_family = socket.AF_INET6
             else:
                 self.socket_family = socket.AF_UNIX
-                print "boop"
 
         if self.socket_family == socket.AF_UNIX:     
             addr = (host)
@@ -395,7 +405,6 @@ class MutinyFuzzer():
             '''
              
 
-        #self.output("boop")
         for i in range(0, len(fuzzerData.messageCollection.messages)):
             message = fuzzerData.messageCollection[i]
             
@@ -438,9 +447,13 @@ class MutinyFuzzer():
                         # Now run the fuzzer for each fuzzed subcomponent
                         for subcomponent in message.subcomponents:
                             if subcomponent.isFuzzed:
-                                radamsa = subprocess.Popen([RADAMSA, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                if self.mutator == RADAMSA: 
+                                    mutator = subprocess.Popen([self.mutator, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                else:
+                                    mutator = subprocess.Popen([self.mutator, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
                                 tmpByteArray = subcomponent.getAlteredByteArray()
-                                (fuzzedByteArray, error_output) = radamsa.communicate(input=tmpByteArray)
+                                (fuzzedByteArray, error_output) = mutator.communicate(input=tmpByteArray)
                                 fuzzedByteArray = bytearray(fuzzedByteArray)
                                 # skip/abort run..
                                 if subcomponent.fixedSize > 0:
@@ -600,7 +613,7 @@ class MutinyFuzzer():
             if self.campaign:
                 #self.output("[m.m] boop",CYAN)
                 action = self.camp_sock.recv(4096) 
-                #self.output("[m.m] doop",CYAN)
+                #self.output("[m.m] doop %s"%repr(action),CYAN)
                 if action[0:2] == "go": 
                     msg = float(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])
                     m,sm = str(msg).split(".")
@@ -609,8 +622,9 @@ class MutinyFuzzer():
 
                 if "delimdump" in action:
                     # dump the new .fuzzer to a string to send back to campaign
-                    self.output("Dumping current seed delim: %d"%(self.i-1))
+                    #self.output("Dumping current seed delim: %d"%(self.i-1))
                     new_fuzzer = deepcopy(self.fuzzerData)
+                    self.output("saved fuzzy message: %s"%str(self.saved_fuzzy_message))
                     new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
                     self.camp_sock.send(new_fuzzer.writeToFD(delim="\\n"))
                     action = ""
@@ -618,9 +632,10 @@ class MutinyFuzzer():
 
                 if "fulldump" in action:
                     # dump the new .fuzzer to a string to send back to campaign
-                    self.output("Dumping current seed full: %d"%(self.i-1))
+                    #self.output("Dumping current seed full: %d"%(self.i-1))
                     new_fuzzer = deepcopy(self.fuzzerData)
                     new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
+                    self.output("saved fuzzy message: %s"%str(self.saved_fuzzy_message))
                     self.camp_sock.send(new_fuzzer.writeToFD(delim=""))
                     action = ""
                     continue
@@ -939,17 +954,22 @@ def get_mutiny_with_args(prog_args):
     seed_constraint.add_argument("-l", "--loop", help="Loop/repeat the given finite number range. Acceptible arg format: [ X | X-Y | X,Y,Z-Q,R | ...]")
     seed_constraint.add_argument("-d", "--dumpraw", help="Test single seed, all packets saved seperately",type=int)
     seed_constraint.add_argument("-e", "--emulate", help="Same as '--dumpraw', but no packets sent",type=int)
+    parser.add_argument("-M","--mutator",help="Specify a custom mutator binary. By default use Radamsa",default=RADAMSA)
     parser.add_argument("-x","--xploit",help="generate a POC or the given seed. Requires -d or -e")
     parser.add_argument("-H","--harness",help="trigger target harness start/stop defined in monitor class")
     parser.add_argument("-c","--campaign",help="Fuzzing Campaign mode, refer to campaign.py for further details, arg==port",type=int)
     parser.add_argument("-k","--lock",help="Determines when to stop/start fuzzing. More info in mutiny_classes/monitor.py.",default="remote_tcp_open")
     parser.add_argument("-f", "--forceMsgProc", help="Use the default MSG Processor, not those found in fuzzers (good for campaign)",action="store_true")
+    
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-q", "--quiet", help="Don't log the self.outputs",action="store_true")
 
     args = parser.parse_args(prog_args)
-    fuzzer = MutinyFuzzer(args)
+    try:
+        fuzzer = MutinyFuzzer(args)
+    except:
+        raise
     return fuzzer
 
 if __name__ == "__main__":
