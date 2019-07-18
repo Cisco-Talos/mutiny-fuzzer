@@ -522,6 +522,8 @@ class MutinyFuzzer():
                 messageByteArray = message.getAlteredMessage()
                 if not self.args.emulate:
                     data = self.receivePacket(connection,addr,len(messageByteArray),i)
+                    if not data:
+                        return 
                     #if data == messageByteArray:
                         #self.output("\tReceived expected response",GREEN)
                     self.messageProcessor.postReceiveProcess(data, messageByteArray, i)
@@ -624,7 +626,7 @@ class MutinyFuzzer():
                     # dump the new .fuzzer to a string to send back to campaign
                     #self.output("Dumping current seed delim: %d"%(self.i-1))
                     new_fuzzer = deepcopy(self.fuzzerData)
-                    self.output("saved fuzzy message: %s"%str(self.saved_fuzzy_message))
+                    self.output("saved fuzzy message: %s"%resp)
                     new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
                     self.camp_sock.send(new_fuzzer.writeToFD(delim="\\n"))
                     action = ""
@@ -635,7 +637,7 @@ class MutinyFuzzer():
                     #self.output("Dumping current seed full: %d"%(self.i-1))
                     new_fuzzer = deepcopy(self.fuzzerData)
                     new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
-                    self.output("saved fuzzy message: %s"%str(self.saved_fuzzy_message))
+                    self.output("saved fuzzy message: %s"%resp)
                     self.camp_sock.send(new_fuzzer.writeToFD(delim=""))
                     action = ""
                     continue
@@ -855,9 +857,9 @@ class MutinyFuzzer():
             rows+=1
 
             rows+=6 # for fuzzer_messages
-
+            
             for i in range(0,len(self.important_messages)):
-                rows_left = int(self.window_height)-rows
+                rows_left = (int(self.window_height)/2)-rows
                 m = self.important_messages[i]
                 sys.__stdout__.write(m+"\n")
 

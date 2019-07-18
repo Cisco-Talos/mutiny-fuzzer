@@ -55,7 +55,6 @@ HARNESS_IP = "0.0.0.0"
 HARNESS_PORT = 6969
 
 SOCKTIMEOUT = .01 
-FUZZERTIMEOUT = .02
 CASES_PER_FUZZER = 40000
 
 logger = None
@@ -89,6 +88,13 @@ try:
     SKIP_TO = int(sys.argv[sys.argv.index("--seed")+1])
 except Exception as e:
     pass
+
+FUZZERTIMEOUT = .1
+try:
+    FUZZERTIMEOUT = float(sys.argv[sys.argv.index("--timeout")+1])
+except Exception as e:
+    pass
+
 
 #! Distributed fuzzing
 #! add flag for fuzzer file source (https get checks on queue)
@@ -154,9 +160,10 @@ def main(logs):
         except:
             pass
         
-        while fuzzer_queue.empty(): 
+        time.sleep(2)
+        if fuzzer_queue.empty(): 
             print "[?.x] Couldn't find any .fuzzer files in %s what do?" % fuzzer_dir 
-            sys.exit()
+            return
 
         #! multithread will requeire a harness thread and control_sock per
         launch_thread = multiprocessing.Process(target = launch_corpus,
@@ -174,7 +181,8 @@ def main(logs):
 
     harness_thread = multiprocessing.Process(target = crash_listener,
                                              args = (crash_queue,
-                                                     done_switch))
+                                                     done_switch,
+                                                     logs))
     harness_thread.start()
     time.sleep(1)
 
@@ -184,6 +192,7 @@ def main(logs):
         try:
             control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
             control_sock.connect((IP,PORT)) 
+            break
         except KeyboardInterrupt:
             done_switch.set()
             time.sleep(1)
@@ -193,11 +202,12 @@ def main(logs):
             time.sleep(1)
             #print "Could not connect to mutiny :("
     
-    
     control_sock.send("go")            
     try:
-        print "boop"
         while True:
+            logs.flush()
+            crash = ""
+            
             if done_switch.is_set():
                 try:
                     control_sock.send("die")
@@ -207,25 +217,23 @@ def main(logs):
 
             # recv current seed
             resp = get_bytes(control_sock)
-             
+            if len(resp) > 20:  
+                dumped_fuzzer = resp 
             # we depend on the harnesses to only send data when there is a crash
             if len(resp):
                 try:
                     # got a crash from harness_socket
                     crash = crash_queue.get_nowait()
                     if len(crash):
-                        logs.write("resp:%s" % str(crash))
-                        control_sock.send("dump")
-                        dumped_fuzzer = get_bytes(control_sock) 
-
-                        # in case there was extra data
-                        if len(dumped_fuzzer) < 20:
+                        control_sock.send("fulldump")
+                        
+                        if len(resp) < 20:
                             dumped_fuzzer = get_bytes(control_sock) 
 
                         # add to queue
+                        seed,msg,submsg = resp.split(",")
                         logs.write("\n*******************\n") 
-                        logs.write("Seed: " + str(resp) + "\n")
-                        
+                        logs.write("Seed: %s, Msg:%s.%s\n"%(seed,msg,submsg))
                         logs.write("\n*******************\n") 
                         logs.write("******CRASH*******\n") 
                         logs.write(crash)
@@ -234,10 +242,10 @@ def main(logs):
                         logs.write("*******************\n") 
                         logs.flush()
                         time.sleep(process_respawn_time)
-                except Exception as e:
-                    print e
+                except Empty:
                     pass
-
+                except:
+                    raise
             try:
                 control_sock.send("go")
             except:
@@ -253,11 +261,13 @@ def main(logs):
                     sys.exit()
     
     except KeyboardInterrupt:
+        done_switch.set()
+        print "[^_^] Exiting!"
         sys.exit() 
 
-def get_bytes(sock):
+def get_bytes(sock,timeout=SOCKTIMEOUT):
     ret = ""
-    sock.settimeout(SOCKTIMEOUT)
+    sock.settimeout(timeout)
     try:
         while True:
             tmp = sock.recv(65535)
@@ -271,21 +281,32 @@ def get_bytes(sock):
     return ret
 
 
-def crash_listener(crash_queue,done_switch):
+def crash_listener(crash_queue,done_switch,logger):
     harness_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-    harness_socket.bind((HARNESS_IP,HARNESS_PORT))
+    harness_socket.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+    try:
+        harness_socket.bind((HARNESS_IP,HARNESS_PORT))
+    except:
+        print "Could not bind crash listener...."
+        logger.write("[x.x] Could not bind crash listener....")
+        done_switch.set()
+        return
+
     harness_socket.listen(3)
     
     while True:
         try:
             cli_sock,cli_addr = harness_socket.accept() 
-            cli_resp = get_bytes(cli_sock)
+            cli_resp = get_bytes(cli_sock,1)
+            if len(cli_resp):
+                logger.write("crash_list got %d bytes"%len(cli_resp))
             crash_queue.put(cli_resp)
             cli_sock.close()
         except socket.timeout:
             pass
         except Exception as e:
-            print e
+            logger.write(e)
+            logger.flush()
 
         if done_switch.is_set():
             break
@@ -299,7 +320,7 @@ def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
     
     args = [fuzzer,
             "--campaign",str(control_port),
-            "-r","%d-"%SKIP_TO
+            "-r","%d-"%SKIP_TO,
             "-R","%d"%(amt_per_fuzzer/100),
             "-t",str(timeout), 
             "-i",target_ip
@@ -359,7 +380,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                     "--campaign",str(control_port),
                     "-r","%d-%d"%(lowerbound,upperbound),
                     #! add this via cmdline...
-                    #"-R","%d"%(amt_per_fuzzer/100),
+                    "-R","%d"%(amt_per_fuzzer/100),
                     "-t",str(timeout), 
                     "-i",target_ip,
                     "-f"

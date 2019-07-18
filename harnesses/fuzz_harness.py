@@ -38,42 +38,83 @@ fuzzer_ip = "127.0.0.1"
 fuzzer_port = 6969
 
 def main(log):
+    fuzzer_sock = None
     connected = False  
+
     while not connected:
         try:
             fuzzer_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
             fuzzer_sock.connect((fuzzer_ip,fuzzer_port))
             connected = True
-        except:
+        except Exception as e:
             msg = "[x.x] No comms with fuzz harness, sleeping. (%s:%d)"%(fuzzer_ip,fuzzer_port)
-            print msg
-            fuzzer_sock = None
+            print e
             sleep(1)
             sys.stdout.write("\b"*(len(msg)+1))
             sys.stdout.flush()
-
     try:
+        subprocess.call("clear")
+        sys.stdout.write('[z.z] Fuzzer running....\n')  
+        
         while True:
+            sys.stdout.flush()
             cmd = ["gdb","-x","harness_cmds.txt","--args"] 
             cmd = cmd + sys.argv[1:]
             print cmd
-            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT) 
-            resp,err = proc.communicate()
-            print resp
+            p = subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE) 
+            try:
+                resp,err = p.communicate()
+                #print resp
+                p.stdout.close()
+                p.stderr.close() 
+            except KeyboardInterrupt:
+                sys.exit()
+            # since asan is annoying, we append everything together, then parse.
+            resp = resp + err
               
-            if "SIGSEGV" in resp:
-                print "[^_^] got sometin!"
+            if "SIGSEGV" in resp or "SIGABRT" in resp or "ERROR: AddressSanitizer" in resp:
+                for test in ["SIGSEGV","SIGABRT","ERROR: AddressSanitizer"]: 
+                    if test in resp:
+                        index = resp.find(test)
+                        break 
+                crash_log = resp[index:]
+                endindex = crash_log.find('\n')
+                result = "[^_^] Got a crash! %s" % crash_log[:endindex]
+                log.write(result+"\n") 
+                print result
+    
                 if fuzzer_sock:
-                    fuzzer_sock.send(resp)
-                log.write(resp)
+                    try:
+                        fuzzer_sock.send(crash_log)
+                    except Exception as e:
+                        try:
+                            fuzzer_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+                            fuzzer_sock.connect((fuzzer_ip,fuzzer_port))
+                            fuzzer_sock.send(crash_log)
+                        except Exception as e:
+                            print e
+                            print "[x.x] couldn't connect to fuzzer to report, dumping to log only!" 
+                else:
+                    print "NO socket?"
+
+                
                 log.write("\n****************\n"*5)
 
-    except KeyboardInterrupt:
+    except:
         import traceback
         print traceback.print_exc()
-        return
-    except Exception as e:
-        print e
+        try: 
+            p.stdout.close()
+            p.stderr.close() 
+        except:
+            pass
+        try:
+            log.flush()
+            log.close()
+        except:
+            pass
+        
+        sys.exit()
 
 
 with open('log.txt','a') as log:

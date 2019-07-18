@@ -83,7 +83,7 @@ def main():
             serv_sock.listen(1)
             print "[!.!] Bound to " + IP + ":" + str(PORT)
             sock,cli_addr = serv_sock.accept()
-            print "[!.!] Connection from %s:%d"%cli_addr
+            print "[!.!] Connection from " + str(cli_addr)
             sock.settimeout(timeout)
         except Exception as e:
             print "[x.x] No connect to " + IP +":" + str(PORT)

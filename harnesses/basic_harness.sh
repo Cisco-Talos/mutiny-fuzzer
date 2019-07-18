@@ -33,7 +33,7 @@
 target=$1
 args=$2
 if [ -z "$target" ] ; then
-    echo "Usage: $0 <fuzzing_host_IP> \"<cmdline args for proc to run>\""
+    echo "Usage: $0 \"<cmdline args for proc to run>\""
     exit
 fi
 
@@ -41,12 +41,14 @@ sample_cmds="
 #----sample harness_cmds.txt----\n
 set pagination off\n
 set follow-fork-mode child\n
+handle SIGPIPE nostop noprint pass\n
+handle SIGSTOP nostop noprint pass\n
 run\n
 ############\n
 # Cmd to run after crash\n
 info reg\n
 bt\n
-x/4i $pc
+x/4i \$pc\n
 ############\n
 quit\n
 "
@@ -67,9 +69,9 @@ break_loop() {
 }
 
 while true; do
-	gdb -x harness_cmds.txt --args $target $args 2>&1 | tee $dir/harness.log || echo "No target? ($target)"; sleep 2 
-	#grep "SIGSEGV" harness.log && cat $dir/harness.log | nc -i 1 $fuzzing_host 6969 && "SIGSEGV detected at `date`"
-	#grep "SIGABRT" harness.log && cat $dir/harness.log | nc -i 1 $fuzzing_host 6969 && "SIGABRT detected at `date`"
+	gdb -x harness_cmds.txt --args $args 2>&1 | tee $dir/harness.log || echo "No target? ($args)"; sleep 2 
     grep "SIGSEGV" $dir/harness.log && mv $dir/harness.log "$dir/harness.log.`date`"
     grep "SIGABRT" $dir/harness.log && mv $dir/harness.log "$dir/harness.log.`date`"
+    grep "ERROR: AddressSanitizer" $dir/harness.log && mv $dir/harness.log "$dir/harness.log.`date`"
+
 done
