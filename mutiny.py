@@ -478,7 +478,8 @@ class MutinyFuzzer():
                     
                 old_len = len(message.getOriginalMessage())
                 new_len = len(message.getAlteredMessage()) 
-                self.output("Message %s, seed: %d, old len: %d, new len %d" %(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz],seed,old_len,new_len),CYAN)
+                if old_len != new_len:
+                    self.output("Message %s, seed: %d, old len: %d, new len %d" %(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz],seed,old_len,new_len),CYAN)
                 
                 # Always let the user make any final modifications pre-send, fuzzed or not
                 byteArrayToSend = messageProcessor.preSendProcess(message.getAlteredMessage())
