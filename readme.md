@@ -21,28 +21,52 @@ Blog post here:
 Links to this YouTube video demo:
 * https://www.youtube.com/watch?v=FZyR6MgJCUs
 
+# Typical Workflow:
+1. Find a target to fuzz and a client for the target.
+2. Setup the target: 
+    * `gdb -ex "source ~/mutiny-fuzzer/harnesses/gdb_fuzz_harness.py" --args <args...>` 
+3. Use [Decept Proxy](https://github.com/Cisco-Talos/Decept) for fuzzer dump. 
+    * `python ~/decept/decept.py 127.0.0.1 9999 <dst_ip> <dst_port> --timeout .1 --dont_kill --fuzzer dumped.fuzzer` 
+4. Run the client through decept to get a fuzzer. (Alternatively, use a pcap with mutiny_prep.py) 
+5. Fuzz the target:
+    * `python ~/mutiny-fuzzer/mutiny.py corpus/test.fuzzer -i 192.168.0.1 --feedback 192.168.0.1:60000 --timeout .4`
+6. Crashes will be written into `mutidumps.txt` on the fuzzer side, and `crashes/<crash_desc_and_time>` on the client.
+    * On the fuzzer side, proof of concept python scripts will also be created in `<cwd>/autogen_pocs` folder. 
+
+# Todo:
+* Good feedback. There's currently the `fuzzer_feedback` folder which is a dynamorio version of feedback, but I'd consider those a rough draft. Currently working on something more portable and usable.  
+
 # Experimental Branch Overview `<(^.^)>`
 
 There's been a large amount of changes compared to the master branch, mostly things added
 to make Mutiny better at longterm fuzzing campaigns. A list of the things I can think of
 is found here:
 
-1. campaign\_mode.py
-    * Run for long periods of time, and dumps crashes accordingly.
-    * Can take a folder as it's .fuzzer argument, and it will rotate over the corpus. 
-2. Harnesses
-    * Some basic harnesses have been included to interact with campaign_mode.py.  
-3. mutiny\_prep.py campaign mode:
+1. Harnesses
+    * Some basic harnesses have been included to interact with `mutiny.py --feedback`(preferred) and/or campaign_mode.py  
+    * e.g. : `python ~/mutiny-fuzzer/mutiny.py corpus/test.fuzzer -i 192.168.0.1 --feedback 192.168.0.1:60000 --timeout .4`
+    * And then on the target: `gdb -ex "source ~/mutiny-fuzzer/harnesses/gdb_fuzz_harness.py" --args <args...>` 
+2. mutiny\_prep.py campaign mode:
     * The -c \<folder\> will try to dump all sessions out of a .pcap into different .fuzzers inside \<folder\>. 
-4. mutiny.py
+3. mutiny.py
+    * `-F <ipaddrss>` => Fuzzer harness directly for mutiny. Works with `harnesses/gdb_fuzz_harness.py`
     * `-e <seedNum>` has been added to emulate a given seed.
     * `-x <filename>`  can dump out a POC for a given seed.
     * `-m <numberRange>` allows you to fuzz only a specific message set 
     * `-R <numPerMessage>`  causes mutiny to fuzz each submessage for \<numPerMessage\> iterations. 
-5. More accurate crash detection
-    * Monitor class `mutiny_classes/monitor.py` by default has some neat stuff. Check it out.
-6. Good stuff planned for the near future
-    * `<(^_^)>` 
+    * `-M <mutator>` Use a specific mutator besides default radamsa (it must use stdin/stdout). 
+4. More accurate crash detection/fuzzer control
+    * Monitor class `mutiny_classes/monitor.py` by default has added granularity. By default, fuzzing will stop when the target port cannot be connected to, but different locking conditions can be set (e.g. pinging, process listenting, never locked)
+5. Auto generated POCs (`autogen_pocs/<fuzzername_seed_msg>.py`)
+6. Fuzzing callbacks (presend/prefuzz/etc) added into the individual .fuzzers themselves for a per-fuzzer customization.
+    * If you still want the `mutiny_classes/message_processor.py` customization, use the `-f, --forceMsgProc` switch. 
+7. campaign\_mode.py
+    * Run for long periods of time, and dumps crashes accordingly.
+    * Can take a folder as it's .fuzzer argument, and it will rotate over the corpus. 
+
+# Assorted Thoughts/Tips:
+* Occasionally more than one seed might be needed to cause the crash so the `-r` and `-l` switches are useful for replication.
+* If there's no output from mutiny but there is network traffic, it might just be a timeout issue (`--timeout` and `--sleeptime`). 
     
 ## Setup
 
@@ -115,6 +139,26 @@ the .fuzzer (by default) or into a separate subfolder specified as the
 
 Contains different hooks for different stages of the fuzzing process. 
 Just write python for grooming the messages however you want. 
+
+#### Example:
+* For keeping an accurate size field, just put "SIZE" inside the outbound message and then, in the .fuzzer itself:
+```
+    def preSendProcess(self, message):
+
+        if "SIZE" in message:
+            try:
+                ret = "\x80\x00"
+                ret+=struct.pack(">I",len(message)-6)
+                ret+=message[6:]
+                return ret
+            except Exception as e:
+                print e
+                pass
+
+        return message
+```
+
+
 
 ### Customization - Monitor
 
