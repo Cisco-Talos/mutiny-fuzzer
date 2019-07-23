@@ -52,7 +52,7 @@ IP = "127.0.0.1"
 PORT = 61600
 
 HARNESS_IP = "0.0.0.0"
-HARNESS_PORT = 6969
+HARNESS_PORT = 60000
 
 SOCKTIMEOUT = .01 
 CASES_PER_FUZZER = 40000
@@ -203,10 +203,13 @@ def main(logs):
             #print "Could not connect to mutiny :("
     
     control_sock.send("go")            
+    dumped_fuzzer = ""
+    crash = ""
+    last_seed = ""
+
     try:
         while True:
             logs.flush()
-            crash = ""
             
             if done_switch.is_set():
                 try:
@@ -217,35 +220,44 @@ def main(logs):
 
             # recv current seed
             resp = get_bytes(control_sock)
-            if len(resp) > 20:  
-                dumped_fuzzer = resp 
-            # we depend on the harnesses to only send data when there is a crash
             if len(resp):
-                try:
-                    # got a crash from harness_socket
-                    crash = crash_queue.get_nowait()
-                    if len(crash):
-                        control_sock.send("fulldump")
-                        
-                        if len(resp) < 20:
-                            dumped_fuzzer = get_bytes(control_sock) 
+                last_seed = resp
 
-                        # add to queue
-                        seed,msg,submsg = resp.split(",")
-                        logs.write("\n*******************\n") 
-                        logs.write("Seed: %s, Msg:%s.%s\n"%(seed,msg,submsg))
-                        logs.write("\n*******************\n") 
-                        logs.write("******CRASH*******\n") 
-                        logs.write(crash)
-                        logs.write("*******************\n") 
-                        logs.write(dumped_fuzzer)
-                        logs.write("*******************\n") 
-                        logs.flush()
-                        time.sleep(process_respawn_time)
-                except Empty:
-                    pass
-                except:
-                    raise
+            try:
+                # got a crash from harness_socket
+                crash = crash_queue.get_nowait()
+            except Empty:
+                crash = ""
+
+            if len(crash):
+                # is there a delay on fulldump/delimdump? :/
+                control_sock.send("fulldump")
+                while len(dumped_fuzzer) < 0x20:
+                    dumped_fuzzer = get_bytes(control_sock) 
+                    time.sleep(.1)
+
+                print "[^_^] got fuzzer! %d bytes"%len(dumped_fuzzer)
+
+                # add to queue
+                seed,msg,submsg = last_seed.split(",")
+                tmp = ""
+                tmp+="\n*******************\n" 
+                tmp+="Seed: %s, Msg:%s.%s\n"%(seed,msg,submsg)
+                tmp+="\n*******************\n" 
+                tmp+="******CRASH*******\n" 
+                tmp+=crash
+                tmp+="******FUZZER*******\n" 
+                tmp+=dumped_fuzzer
+                tmp+="*******************\n"
+                logs.write(tmp)
+                logs.flush()
+
+                with open("crashes/%s"%datetime.datetime.now(),"wb") as f:
+                    f.write(tmp) 
+                time.sleep(process_respawn_time)
+                dumped_fuzzer = ""
+                crash = ""
+
             try:
                 control_sock.send("go")
             except:
@@ -294,18 +306,20 @@ def crash_listener(crash_queue,done_switch,logger):
 
     harness_socket.listen(3)
     
+    cli_sock,cli_addr = harness_socket.accept() 
     while True:
         try:
-            cli_sock,cli_addr = harness_socket.accept() 
             cli_resp = get_bytes(cli_sock,1)
             if len(cli_resp):
                 logger.write("crash_list got %d bytes"%len(cli_resp))
             crash_queue.put(cli_resp)
-            cli_sock.close()
         except socket.timeout:
             pass
         except Exception as e:
-            logger.write(e)
+            logger.write(str(e))
+            sys.__stdout__.write(str(e))
+            sys.__stdout__.flush()
+            cli_sock,cli_addr = harness_socket.accept() 
             logger.flush()
 
         if done_switch.is_set():
@@ -389,19 +403,22 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
             if target_port:
                 args.append("--port")
                 args.append(str(target_port))
-            
-            logger.write("-------------------------------\n")
-            logger.write("Starting on %s (%d-%d) @ %s\n" %(fuzzer,lowerbound,\
-                                                          upperbound,datetime.datetime.now()))
-            logger.write("#!")
-            logger.write(str(args))
-            logger.write("-------------------------------\n")
-            logger.flush()
+
+            msg = "" 
+            msg += "-------------------------------\n"
+            msg += "Starting on %s (%d-%d) @ %s\n" %(fuzzer,lowerbound,\
+                                                          upperbound,datetime.datetime.now())
+            msg+="#!"
+            msg+=str(args)
+            msg+="-------------------------------\n"
+            logger.write(msg)
             
             fuzzy = get_mutiny_with_args(args)
             fuzzy.fuzz()
             fuzzy.sigint_handler(-1)
-
+        except KeyboardInterrupt:
+            break
+        
         except Exception as e:
             print e
             logger.write(str(e))
@@ -410,11 +427,17 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
         # Move over to processed_fuzzer dir 
         # if we're only doing campaign, I don't fucking care.
         # os.rename(fuzzer,os.path.join(processed_dir,os.path.basename(fuzzer))) 
+        if done_switch.is_set():
+            break
 
     done_switch.set()
     print "[^_^] DONE!"
 
 
 if __name__ == "__main__":
+    try:
+        os.mkdir("crashes")
+    except:
+        pass
     with open("fuzzer_log.txt",'a') as logger:
         main(logger)

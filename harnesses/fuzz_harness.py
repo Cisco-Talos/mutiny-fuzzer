@@ -31,6 +31,7 @@
 #------------------------------------------------------------------
 import subprocess
 from time import sleep
+from time import time as t
 import socket
 import sys
 
@@ -48,7 +49,7 @@ def main(log):
             connected = True
         except Exception as e:
             msg = "[x.x] No comms with fuzz harness, sleeping. (%s:%d)"%(fuzzer_ip,fuzzer_port)
-            print e
+            #print e
             sleep(1)
             sys.stdout.write("\b"*(len(msg)+1))
             sys.stdout.flush()
@@ -60,17 +61,11 @@ def main(log):
             sys.stdout.flush()
             cmd = ["gdb","-x","harness_cmds.txt","--args"] 
             cmd = cmd + sys.argv[1:]
-            print cmd
-            p = subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE) 
-            try:
-                resp,err = p.communicate()
-                #print resp
-                p.stdout.close()
-                p.stderr.close() 
-            except KeyboardInterrupt:
-                sys.exit()
+            print "running"
+            resp = subprocess.check_output(cmd,stderr=subprocess.STDOUT)
             # since asan is annoying, we append everything together, then parse.
-            resp = resp + err
+            print "done running"    
+            print resp
               
             if "SIGSEGV" in resp or "SIGABRT" in resp or "ERROR: AddressSanitizer" in resp:
                 for test in ["SIGSEGV","SIGABRT","ERROR: AddressSanitizer"]: 
@@ -82,6 +77,8 @@ def main(log):
                 result = "[^_^] Got a crash! %s" % crash_log[:endindex]
                 log.write(result+"\n") 
                 print result
+                with open("crash_%s"%str(t()),"wb") as f:
+                    f.write(crash_log)
     
                 if fuzzer_sock:
                     try:
@@ -104,6 +101,7 @@ def main(log):
         import traceback
         print traceback.print_exc()
         try: 
+            sys.stdout.flush()
             p.stdout.close()
             p.stderr.close() 
         except:

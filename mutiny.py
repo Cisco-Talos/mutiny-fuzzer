@@ -166,6 +166,20 @@ class MutinyFuzzer():
             except Exception as e:
                 self.output("Message Error: %s"%str(e))
                 exit()
+
+        self.crash_socket = None
+        if args.feedback:
+            self.crash_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            try:
+                feedback_ip, feedback_port = args.feedback.split(":") 
+                self.crash_socket.bind((feedback_ip,int(feedback_port)))
+                self.crash_socket.listen(1)
+                self.crash_socket.settimeout(1)
+                self.crash_socket.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            except Exception as e:
+                self.output("[x.x] Invalid --feedback %s, format=> \"<ip>:<port>\", feedback disabled"%args.feedback,YELLOW) 
+                self.output(str(e))
+                
                 
         ######## Processor Setup ################
         # The processor just acts as a container #
@@ -278,6 +292,7 @@ class MutinyFuzzer():
 
 
     def makeConnector(self,host,port,messageProcessor,seed):
+
         if not self.socket_family:
             if match(r'^\d{1,3}(\.\d{1,3}){3}$',host):
                 self.socket_family = socket.AF_INET
@@ -460,8 +475,7 @@ class MutinyFuzzer():
                                     fuzzedByteArray = fuzzedByteArray[0:subcomponent.fixedSize]
 
                                 subcomponent.setAlteredByteArray(fuzzedByteArray)
-                                if self.campaign:
-                                    self.saved_fuzzy_message = subcomponent.getAlteredByteArray()
+                                self.saved_fuzzy_message = subcomponent.getAlteredByteArray()
                                     
                     # Fuzzing has now been done if this message is fuzzed
                     # Always call preSend() regardless for subcomponents if there are any
@@ -473,13 +487,13 @@ class MutinyFuzzer():
                             presend = messageProcessor.preSendSubcomponentProcess(subcomponent.getAlteredByteArray(), allSubcomponents)
                             subcomponent.setAlteredByteArray(presend)
         
-                    if not doesMessageHaveSubcomponents and self.campaign:
-                            self.saved_fuzzy_message = message.getAlteredMessage()
+                    if not doesMessageHaveSubcomponents:
+                        self.saved_fuzzy_message = message.getAlteredMessage()
                     
                 old_len = len(message.getOriginalMessage())
                 new_len = len(message.getAlteredMessage()) 
                 if old_len != new_len:
-                    self.output("Message %s, seed: %d, old len: %d, new len %d" %(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz],seed,old_len,new_len),CYAN)
+                    self.output("Message %s, seed: %d, old len: %d, new len %d" %(i,seed,old_len,new_len),CYAN)
                 
                 # Always let the user make any final modifications pre-send, fuzzed or not
                 byteArrayToSend = messageProcessor.preSendProcess(message.getAlteredMessage())
@@ -491,7 +505,6 @@ class MutinyFuzzer():
                     try:
                         self.sendPacket(connection, addr, byteArrayToSend)
                     except Exception as e:
-                        self.output(e)
                         message.resetAlteredMessage()
 
 
@@ -522,7 +535,14 @@ class MutinyFuzzer():
             elif message.direction != fuzzerData.fuzzDirection: 
                 messageByteArray = message.getAlteredMessage()
                 if not self.args.emulate:
-                    data = self.receivePacket(connection,addr,len(messageByteArray),i)
+                    data = ""
+                    try:
+                        data = self.receivePacket(connection,addr,len(messageByteArray),i)
+                    except Exception as e:
+                        if "timed" in e:
+                            connection.close()
+                            raise 
+
                     if not data:
                         return 
                     #if data == messageByteArray:
@@ -564,7 +584,7 @@ class MutinyFuzzer():
             with open("%s"%fname,"wb") as e:
                 # for readability
                 #print self.poc_packet_cache
-                poc_buffer = str(self.poc_packet_cache).replace("')), (", "')),\n(") 
+                poc_buffer = str(self.poc_packet_cache).replace(")), (", ")),\n(") 
                 poc_buffer = poc_buffer.replace("[(","[\n(")
                 poc_buffer = poc_buffer.replace(")]",")\n]")
                 #self.output("Generate_POC params: %s %d %s"%(IP,PORT,str(poc_buffer))) 
@@ -573,8 +593,37 @@ class MutinyFuzzer():
                 self.poc_packet_cache = [] # clear it out, yo
                 if not self.campaign:
                     self.output("[^_^] Generate_POC completed!: %s %s %d"%(fname,IP,PORT)) 
+    
+    
+    # give a dumped fuzzer, get back a poc
+    def generate_poc_from_fuzzer(self,fuzzer): 
+        IP = self.args.target_host
+        PORT = self.fuzzerData.port
+        skeleton=os.path.abspath( os.path.join(__file__, "../util/skeleton_poc.py") )
+        
+        with open(skeleton,"r") as f:
+            tmp_packet_cache = [] 
+            for line in fuzzer.split("\n"):
+                if line.startswith("outbound"):
+                    pocmsg = line[line.find("'")+1:-1] 
+                    if len(pocmsg):
+                        tmp_packet_cache.append(("outbound",bytearray(pocmsg)))
+                elif line.startswith("inbound"):
+                    pocmsg = line[line.find("'")+1:-1] 
+                    if len(pocmsg):
+                        tmp_packet_cache.append(("inbound",bytearray(pocmsg)))
                 
-                
+            # for readability
+            #print self.poc_packet_cache
+            poc_buffer = str(tmp_packet_cache).replace(")), ", ")),\n") 
+            poc_buffer = poc_buffer.replace(")), (", ")),\n(") 
+            poc_buffer = poc_buffer.replace("[(","[\n(")
+            poc_buffer = poc_buffer.replace(")]",")\n]")
+            poc_buffer = poc_buffer.replace("\\\\x","\\x")
+            #self.output("Generate_POC params: %s %d %s"%(IP,PORT,str(poc_buffer))) 
+            inp = f.read()
+            return inp%(str(IP),PORT,str(poc_buffer)) 
+         
 
 
     # Set up signal handler for CTRL+C and signals from child monitor thread
@@ -620,7 +669,7 @@ class MutinyFuzzer():
                 if action[0:2] == "go": 
                     msg = float(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])
                     m,sm = str(msg).split(".")
-                    resp = "%d,%s,%s"%(i,m,sm)
+                    resp = "%d,%s,%s"%(i-1,m,sm)
                     self.camp_sock.send(resp) # an ack of sorts
 
                 if "delimdump" in action:
@@ -640,6 +689,7 @@ class MutinyFuzzer():
                     new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
                     self.output("saved fuzzy message: %s"%resp)
                     self.camp_sock.send(new_fuzzer.writeToFD(delim=""))
+                    self.output("saved fuzzy message: %s"%resp)
                     action = ""
                     continue
 
@@ -691,6 +741,7 @@ class MutinyFuzzer():
                             continue 
                          
                 except Exception as e:
+                    self.output(str(e))
                     if self.monitor.crashEvent.isSet():
                         self.output("Crash event detected",LIME)
                         self.monitor.crashEvent.clear()
@@ -737,12 +788,10 @@ class MutinyFuzzer():
                 if i > self.MIN_RUN_NUMBER:
                     curr_time = datetime.datetime.now() 
 
-                    crash_dump_dir = os.path.join(os.getcwd(),"harness_logs","autogen_pocs")
-
+                    crash_dump_dir = os.path.join(os.getcwd(),"autogen_pocs")
                     try:
                         os.mkdir(crash_dump_dir)
                     except:
-                        crash_dump_dir = os.path.join(os.getcwd(),"harness_logs","autogen_pocs")
                         #self.output("Unable to generate harness logs dir...")
                         pass 
 
@@ -752,21 +801,48 @@ class MutinyFuzzer():
                         orig_timeout = i+1
                     else:
                         i = orig_timeout   
+        
+                    crash_output = ""
+                    if self.crash_socket != None:
+                        try:
+                            cli_sock,cli_addr = self.crash_socket.accept() 
+                            cli_sock.settimeout(.1)
+                            while True:
+                                try:
+                                    tmp = cli_sock.recv(65535)  
+                                    if tmp:
+                                        crash_output+=tmp
+                                    else:
+                                        break
+                                except socket.timeout:
+                                    break
+                            cli_sock.close() 
+                            self.output("[^_^] Got crash output...%d bytes"%len(crash_output))
+                        except:
+                            pass 
+                                            
+                        
+                            
 
-                    self.output("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i,\
+                    self.output("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i-1,\
                                                                                           fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
+                    
 
                     with open(crash_dump_file,"a") as f:
-                        f.write("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i,\
+                        f.write("**************************\n")
+                        f.write("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i-1,\
                                                                                               fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
-                    '''
-                    try:
-                        crash_poc_file = os.path.join(crash_dump_dir,"%s_%d_%s.py"% (os.path.basename(self.fuzzerFilePath),orig_timeout-1,\
+                        if crash_output:
+                            f.write(crash_output)
+                       
+                            new_fuzzer = deepcopy(self.fuzzerData)
+                            new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
+                            poc = self.generate_poc_from_fuzzer(new_fuzzer.writeToFD(delim="")) 
+                            f.write(poc)
+                            crash_poc_file = os.path.join(crash_dump_dir,"%s_%d_%s.py"% (os.path.basename(self.fuzzerFilePath),i-1,\
                                                                                      fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
-                        self.generate_poc(host,crash_poc_file)
-                    except Exception as e:
-                        self.output(str(e),RED) 
-                    '''
+                            with open(crash_poc_file,"w") as f2:
+                                f2.write(poc)
                     
 
                     try:
@@ -963,7 +1039,7 @@ def get_mutiny_with_args(prog_args):
     parser.add_argument("-c","--campaign",help="Fuzzing Campaign mode, refer to campaign.py for further details, arg==port",type=int)
     parser.add_argument("-k","--lock",help="Determines when to stop/start fuzzing. More info in mutiny_classes/monitor.py.",default="remote_tcp_open")
     parser.add_argument("-f", "--forceMsgProc", help="Use the default MSG Processor, not those found in fuzzers (good for campaign)",action="store_true")
-    
+    parser.add_argument("-F","--feedback",help="Ip:port of process harness (if any).",default="127.0.0.1:60000")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-q", "--quiet", help="Don't log the self.outputs",action="store_true")
