@@ -421,6 +421,7 @@ class MutinyFuzzer():
              
 
         for i in range(0, len(fuzzerData.messageCollection.messages)):
+            self.output("") # Flush stdout buff
             message = fuzzerData.messageCollection[i]
             
             # Go ahead and revert any fuzzing or messageprocessor changes before proceeding
@@ -1039,7 +1040,7 @@ def get_mutiny_with_args(prog_args):
     parser.add_argument("-c","--campaign",help="Fuzzing Campaign mode, refer to campaign.py for further details, arg==port",type=int)
     parser.add_argument("-k","--lock",help="Determines when to stop/start fuzzing. More info in mutiny_classes/monitor.py.",default="remote_tcp_open")
     parser.add_argument("-f", "--forceMsgProc", help="Use the default MSG Processor, not those found in fuzzers (good for campaign)",action="store_true")
-    parser.add_argument("-F","--feedback",help="Ip:port of process harness (if any).",default="127.0.0.1:60000")
+    parser.add_argument("-F","--feedback",help="Ip:port of process harness (if any).")
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-q", "--quiet", help="Don't log the self.outputs",action="store_true")
