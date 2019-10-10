@@ -409,7 +409,6 @@ class MutinyFuzzer():
 
         # wait for the connection
         if not fuzzerData.clientMode:
-            self.output("Waiting for connection!") 
             connection,addr = self.serverSocket.accept()
             # do a quick check to validate that it's actually our target? 
             '''
@@ -418,7 +417,6 @@ class MutinyFuzzer():
                 connection.close()
                 return -1 
             '''
-             
 
         for i in range(0, len(fuzzerData.messageCollection.messages)):
             self.output("") # Flush stdout buff
@@ -657,8 +655,11 @@ class MutinyFuzzer():
         #self.output("\n**Performing test run without fuzzing...",CYAN)
 
         self.output("[*] Entering main fuzzing loop (target: %s|%d)"%(host,fuzzerData.port),GREEN)
-        self.monitor.lockExecution() # lock till conditional is met
-        self.output("[*] Target detected, fuzzing.",GREEN)
+        if self.fuzzerData.clientMode == True:
+            self.monitor.lockExecution() # lock till conditional is met
+            self.output("[*] Target detected, fuzzing.",GREEN)
+        else:
+            self.output("[*] Waiting for incoming packets",CYAN) 
         
         #print "Fuzzing %d-%d" %(self.MIN_RUN_NUMBER,self.MAX_RUN_NUMBER)
         while True:
@@ -707,7 +708,7 @@ class MutinyFuzzer():
             wasCrashDetected = False
 
             if args.sleeptime > 0:
-                self.output("\n** Sleeping for %.3f seconds **" % args.sleeptime,BLUE)
+                #self.output("\n** Sleeping for %.3f seconds **" % args.sleeptime,BLUE)
                 time.sleep(args.sleeptime)
 
             if args.rrobin: 
@@ -825,13 +826,13 @@ class MutinyFuzzer():
                         
                             
 
-                    self.output("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i-1,\
+                    self.output("[^_^] Potential crash@(%s) - Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i-1,\
                                                                                           fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
                     
 
                     with open(crash_dump_file,"a") as f:
                         f.write("**************************\n")
-                        f.write("[^_^] Potential crash@(%s)\n Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i-1,\
+                        f.write("[^_^] Potential crash@(%s) - Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i-1,\
                                                                                               fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
                         if crash_output:
                             f.write(crash_output)
