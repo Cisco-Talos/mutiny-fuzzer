@@ -102,7 +102,7 @@ HEARTBEAT            = "\x00\x00\x00\x00\x00"
 # msgs with variable data len
 
 if len(sys.argv) < 3:
-    print "[x.x] Usage: %s <fuzzer dir/file> <target_IP>" % sys.argv[0]
+    print "[x.x] Usage: %s <fuzzer dir/file> <target_IP> <mutiny arguments>" % sys.argv[0]
     sys.exit()
 
 fuzzer_dir = None
@@ -465,20 +465,20 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
     '''
     // ~~~~~~~ Start Inbound socket message definitions and utilities ~~~~~~~ 
     //-------------------------------------------------------------------- 
-    // 0x80 | ORelay->Fuzzer    | Mutitrace: Yo, that testcase was cool. 
+    // 0x10 | ORelay->Fuzzer    | Mutitrace: Yo, that testcase was cool. 
     //      | (no contents)     | Fuzzer: Okay, saving it and adding to the queue. 
     // 
-    // 0x84 | ORelay->Fuzzer    | Mutitrace: Sending fuzzer my stuff. 
+    // 0x14 | ORelay->Fuzzer    | Mutitrace: Sending fuzzer my stuff. 
     //      | (no contents)     | Fuzzer: okay, listening for stuff.
     //
-    // 0x8F | ORelay->Fuzzer    | Mutitrace: prog pooped/detected a crash, save that. 
+    // 0x1F | ORelay->Fuzzer    | Mutitrace: prog pooped/detected a crash, save that. 
     //      | (no contents)     | Fuzzer: Okay, saving it. 
     //-------------------------------------------------------------------- //
     '''
     opcode_dict = {
-        0x80:"save_queue",
-        0x84:"receive_shutdown_data",
-        0x8F:"save_crash",
+        0x10:"save_queue",
+        0x14:"receive_shutdown_data",
+        0x1F:"save_crash",
         0xF0:"",
     }
 
@@ -502,7 +502,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
 
             # Lock here till the feedback connects back
             cli_sock,cli_addr = harness_socket.accept() 
-            cli_sock.settimeout(2)
+            #cli_sock.settimeout(2)
             while not len(init_str):
                 init_str = get_bytes(cli_sock)
 
@@ -544,7 +544,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                         try:
                             cli_sock.send(outbound_msg)
                         except:
-                            output("[;_;] Could not send %s! Restarting socket!","feedback",print_queue,YELLOW)
+                            output("[;_;] Could not send %s! Restarting socket!"%outbound_msg,"feedback",print_queue,YELLOW)
                             cli_sock.close()
                             break
                 except Queue.Empty:
@@ -630,8 +630,8 @@ def validate_feedback(inbound):
         raise e
         return ()
 
-    # 0x80 bit marks direction.
-    if (t & 0x80) == 0:
+    # 0x10 bit marks direction.
+    if (t & 0x10) == 0:
         return ()
 
     # MAX_MSG_SIZE => 0x10000
@@ -848,7 +848,7 @@ def output_thread(inp_queue,kill_switch):
     output_width = 48
     
     # Output => pretty. Yay.
-    stat_messages = CLEAR + " Total Runtime : %s \n" \
+    stat_messages = CLEAR + " Total Runtime : %s %s \n" \
                   + " Crash Counter : %d " \
                   + " | "  + " LastCrash %s\n" \
                   + " Queued Fuzzers: %d " \
@@ -881,6 +881,7 @@ def output_thread(inp_queue,kill_switch):
     curr_seed = 0
     curr_msg = 0
     curr_submsg = 0
+    old_seed = 0
     sys.__stdout__.write("\033c") 
     sys.__stdout__.flush()
 
@@ -934,11 +935,12 @@ def output_thread(inp_queue,kill_switch):
                         continue
                 elif inp_type == "curr_msg":
                     try:
+                        if curr_seed:
+                            old_seed = curr_seed
                         curr_seed,curr_msg,curr_submsg = filter(None,inp.split(",")) 
                         curr_seed = int(curr_seed)
                         curr_msg = int(curr_msg)
                         curr_submsg = int(curr_submsg)
-                         
                     except:
                         continue
                 else:
@@ -958,8 +960,12 @@ def output_thread(inp_queue,kill_switch):
             except:
                 queue_diff = "Never"
 
+            if curr_seed == old_seed:
+                run_status = YELLOW + "(Paused)" + CLEAR
+            else:
+                run_status = GREEN + "(Fuzzing)" + CLEAR
             runtime = str(current_time - start_time).split(".")[0] 
-            stat_buf = stat_messages % (runtime,crash_count,crash_diff,fuzzer_count,queue_diff)
+            stat_buf = stat_messages % (runtime,run_status,crash_count,crash_diff,fuzzer_count,queue_diff)
             buf+=stat_buf
             buf+="\n"
 
@@ -1008,7 +1014,6 @@ def output_thread(inp_queue,kill_switch):
             sys.__stdout__.write(GREEN + "[^_^] Thanks for using Mutiny!\n" + CLEAR)
             sys.__stdout__.flush()
             kill_switch.set()
-            
             return
             
             

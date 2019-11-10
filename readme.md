@@ -29,7 +29,7 @@ Links to this YouTube video demo:
     * `python ~/decept/decept.py 127.0.0.1 9999 <dst_ip> <dst_port> --timeout .1 --dont_kill --fuzzer dumped.fuzzer` 
 4. Run the client through decept to get a fuzzer. (Alternatively, use a pcap with mutiny_prep.py) 
 5. Fuzz the target:
-    * `python ~/mutiny-fuzzer/mutiny.py corpus/test.fuzzer -i 192.168.0.1 --feedback 192.168.0.1:60000 --timeout .4`
+    * `python ~/mutiny-fuzzer/mutiny.py corpus/test.fuzzer -i 192.168.0.1 --crashes 192.168.0.1:60000 --timeout .4`
 6. Crashes will be written into `mutidumps.txt` on the fuzzer side, and `crashes/<crash_desc_and_time>` on the client.
     * On the fuzzer side, proof of concept python scripts will also be created in `<cwd>/autogen_pocs` folder. 
 
@@ -43,8 +43,8 @@ to make Mutiny better at longterm fuzzing campaigns. A list of the things I can 
 is found here:
 
 1. Harnesses
-    * Some basic harnesses have been included to interact with `mutiny.py --feedback`(preferred) and/or campaign_mode.py  
-    * e.g. : `python ~/mutiny-fuzzer/mutiny.py corpus/test.fuzzer -i 192.168.0.1 --feedback 192.168.0.1:60000 --timeout .4`
+    * Some basic harnesses have been included to interact with `mutiny.py --crashes`(preferred) and/or campaign_mode.py  
+    * e.g. : `python ~/mutiny-fuzzer/mutiny.py corpus/test.fuzzer -i 192.168.0.1 --crashes 192.168.0.1:60000 --timeout .4`
     * And then on the target: `gdb -ex "source ~/mutiny-fuzzer/harnesses/gdb_fuzz_harness.py" --args <args...>` 
 2. mutiny\_prep.py campaign mode:
     * The -c \<folder\> will try to dump all sessions out of a .pcap into different .fuzzers inside \<folder\>. 

@@ -168,18 +168,20 @@ class MutinyFuzzer():
                 exit()
 
         self.crash_socket = None
-        if args.feedback:
+        if args.crashes:
             self.crash_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
             try:
-                feedback_ip, feedback_port = args.feedback.split(":") 
-                self.crash_socket.bind((feedback_ip,int(feedback_port)))
+                crash_ip, crash_port = args.feedback.split(":") 
+                self.output("[o.o] Binding crash socket @ %s:%d"%(crash_ip,int(crash_port)))
+                self.crash_socket.bind((crash_ip,int(crash_port)))
                 self.crash_socket.listen(1)
                 self.crash_socket.settimeout(1)
                 self.crash_socket.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-            except Exception as e:
-                self.output("[x.x] Invalid --feedback %s, format=> \"<ip>:<port>\", feedback disabled"%args.feedback,YELLOW) 
-                self.output(str(e))
                 
+            except Exception as e:
+                self.output("[x.x] Invalid --crash %s, format=> \"<ip>:<port>\", crash listener disabled"%args.feedback,YELLOW) 
+                self.output(str(e))
+
                 
         ######## Processor Setup ################
         # The processor just acts as a container #
@@ -805,10 +807,8 @@ class MutinyFuzzer():
                         i = orig_timeout   
         
                     crash_output = ""
-                    if self.crash_socket != None:
+                    if self.crash_client != None:
                         try:
-                            cli_sock,cli_addr = self.crash_socket.accept() 
-                            cli_sock.settimeout(.1)
                             while True:
                                 try:
                                     tmp = cli_sock.recv(65535)  
@@ -1038,10 +1038,11 @@ def get_mutiny_with_args(prog_args):
     parser.add_argument("-M","--mutator",help="Specify a custom mutator binary. By default use Radamsa",default=RADAMSA)
     parser.add_argument("-x","--xploit",help="generate a POC or the given seed. Requires -d or -e")
     parser.add_argument("-H","--harness",help="trigger target harness start/stop defined in monitor class")
-    parser.add_argument("-c","--campaign",help="Fuzzing Campaign mode, refer to campaign.py for further details, arg==port",type=int)
+    parser.add_argument("-C","--campaign",help="Fuzzing Campaign mode, you probably don't wanna use this, refer to campaign.py for further details, arg==port",type=int)
     parser.add_argument("-k","--lock",help="Determines when to stop/start fuzzing. More info in mutiny_classes/monitor.py.",default="remote_tcp_open")
-    parser.add_argument("-f", "--forceMsgProc", help="Use the default MSG Processor, not those found in fuzzers (good for campaign)",action="store_true")
-    parser.add_argument("-F","--feedback",help="Ip:port of process harness (if any).")
+    parser.add_argument("-F", "--forceMsgProc", help="Use the default MSG Processor, not those found in fuzzers (good for campaign)",action="store_true")
+    parser.add_argument("-c","--crashes",help="<Ip:port> Bind to ip/port and listen for crashes from fuzzing harness")
+    
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-q", "--quiet", help="Don't log the self.outputs",action="store_true")
