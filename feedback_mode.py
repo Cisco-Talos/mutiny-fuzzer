@@ -270,7 +270,7 @@ def main(logs):
     ret = block_till_feedback_ready(inbound_queue,kill_switch)
     thread_list = [print_thread, launch_thread, harness_thread, corpus_minimizer_thread]
     if ret == -1:
-        #sys.__stdout__.write(YELLOW + "[!.!] Entering Cleanup!\n" + CLEAR)
+        #sys.__stdout__.write(YELLOW + "[!.!] Ctrl+C => Entering Cleanup!\n" + CLEAR)
         #sys.__stdout__.flush()
         # cleanup queue 
         while not inbound_queue.empty():
@@ -292,6 +292,8 @@ def main(logs):
             except:
                 continue
                         
+        sys.__stdout__.write(CYAN + "[^_^] Thanks for using Mutiny!\n" + CLEAR)
+        sys.__stdout__.flush()
         return
 
     output("[!.!] Feedback ready!","feedback",print_queue)
@@ -453,6 +455,8 @@ def main(logs):
     except KeyboardInterrupt:
         kill_switch.set()
 
+    #sys.__stdout__.write(YELLOW + "[!.!] Ctrl+C => Entering Cleanup!\n" + CLEAR)
+    #sys.__stdout__.flush()
     while not inbound_queue.empty():
         inbound_queue.get()
     while not outbound_queue.empty():
@@ -474,6 +478,8 @@ def main(logs):
         except:
             continue
 
+    sys.__stdout__.write(CYAN + "[^_^] Thanks for using Mutiny!\n" + CLEAR)
+    sys.__stdout__.flush()
 
 
 def get_bytes(sock):
@@ -657,9 +663,8 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
             kill_switch.set()
             break
 
-    sys.__stdout__.write(GREEN + "\n[*.*] feedback_listener thread cleaned up\n" + CLEAR)
-    sys.__stdout__.flush()
-    sys.__stderr__.flush()
+    #sys.__stdout__.write(GREEN + "\n[*.*] feedback_listener thread cleaned up\n" + CLEAR)
+    #sys.__stdout__.flush()
 
 
 def validate_feedback(inbound):
@@ -826,9 +831,8 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
             traceback.print_exc()
 
     kill_switch.set()
-    sys.__stdout__.write(GREEN + "\n[*.*] launch_corpus thread cleaned up\n" + CLEAR)
-    sys.__stdout__.flush()
-    sys.__stderr__.flush()
+    #sys.__stdout__.write(GREEN + "\n[*.*] launch_corpus thread cleaned up\n" + CLEAR)
+    #sys.__stdout__.flush()
 
 
 # Polling cuz we don't have that much of a rush.
@@ -875,9 +879,8 @@ def corpus_minimizer(fuzzer_dir,kill_switch,print_queue):
         except:
             continue
    
-    sys.__stdout__.write(GREEN + "\n[*.*] Minimizer thread cleaned up\n" + CLEAR)
-    sys.__stdout__.flush()
-    sys.__stderr__.flush()
+    #sys.__stdout__.write(GREEN + "\n[*.*] Minimizer thread cleaned up\n" + CLEAR)
+    #sys.__stdout__.flush()
     '''
     try:
         with open(os.path.join(fuzzer_dir,"corpus_statistics.txt"),"wb") as f: 
@@ -1030,10 +1033,12 @@ def output_thread(inp_queue,kill_switch):
             buf+="\n"
 
 
+            curr_fuzzer_dir = "/".join(curr_fuzzer.split("/")[:-1])
             buf+=CYAN + ("*"*21) + "Fuzzer" + ("*"*21) + "\n" + CLEAR
-            buf+=" Current Fuzzer :" + curr_fuzzer + "\n"
-            buf+=" Current Seed   :%08d"%curr_seed + "| Msg(%d.%d)" %(curr_msg,curr_submsg) +  "\n"
-            buf+=" SeedRange      :[%d,%d]\n"%(lowerbound,upperbound)
+            buf+=" Current Fuzzer : " + curr_fuzzer_dir + "\n" 
+            buf+= (" "*18) + os.path.basename(curr_fuzzer) + "\n"
+            buf+=" Current Seed   : %08d"%curr_seed + "| Msg(%d.%d)" %(curr_msg,curr_submsg) +  "\n"
+            buf+=" SeedRange      : [%d,%d]\n"%(lowerbound,upperbound)
             buf+=CYAN + ("*"*output_width) + "\n" + CLEAR
 
             fuzzer_msg_limit = 4
@@ -1075,8 +1080,8 @@ def output_thread(inp_queue,kill_switch):
             kill_switch.set()
             break
 
-    sys.__stdout__.write(CYAN + "[^_^] Thanks for using Mutiny!\n" + CLEAR)
-    sys.__stdout__.flush()
+    #sys.__stdout__.write(GREEN + "\n[*.*] print_thread cleaned up\n" + CLEAR)
+    #sys.__stdout__.flush()
             
  
 
