@@ -1056,9 +1056,9 @@ def output_thread(inp_queue,kill_switch):
 
 
             if prevlen > 0:
-                #sys.__stdout__.write("\033[1;1H") 
+                sys.__stdout__.write("\033[1;1H") 
                 sys.__stdout__.write(" "*(height * width)) 
-                #sys.__stdout__.write("\033[1;1H") 
+                sys.__stdout__.write("\033[1;1H") 
                 pass
                 
 
@@ -1069,9 +1069,9 @@ def output_thread(inp_queue,kill_switch):
             time.sleep(refreshrate)
 
         except KeyboardInterrupt:
-            #sys.__stdout__.write("\033c")
-            #sys.__stdout__.write(prevbuf)
-            #sys.__stdout__.flush()
+            sys.__stdout__.write("\033c")
+            sys.__stdout__.write(prevbuf)
+            sys.__stdout__.flush()
             kill_switch.set()
             break
 
