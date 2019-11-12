@@ -160,6 +160,7 @@ def main(logs):
     print_queue = multiprocessing.Queue()
     thread_count = 1
 
+
     print_thread = multiprocessing.Process(target = output_thread,
                                            args=(print_queue,
                                                  kill_switch)) 
@@ -266,7 +267,33 @@ def main(logs):
 
 
     output("[!.!] Block till feedback ready!","feedback",print_queue)
-    block_till_feedback_ready(inbound_queue,kill_switch)
+    ret = block_till_feedback_ready(inbound_queue,kill_switch)
+    thread_list = [print_thread, launch_thread, harness_thread, corpus_minimizer_thread]
+    if ret == -1:
+        #sys.__stdout__.write(YELLOW + "[!.!] Entering Cleanup!\n" + CLEAR)
+        #sys.__stdout__.flush()
+        # cleanup queue 
+        while not inbound_queue.empty():
+            inbound_queue.get()
+        while not outbound_queue.empty():
+            outbound_queue.get()
+        while not print_queue.empty():
+            print_queue.get()
+        while not fuzzer_queue.empty():
+            fuzzer_queue.get()
+
+        for t in thread_list:
+            #sys.__stdout__.write("\n[x.x] Waiting on t %s\n"%str(t))
+            #sys.__stdout__.flush()
+            #sys.__stderr__.flush()
+            try:
+                t.terminate()
+                t.join()    
+            except:
+                continue
+                        
+        return
+
     output("[!.!] Feedback ready!","feedback",print_queue)
     
     # Send a sample testcase for the baseline
@@ -292,8 +319,8 @@ def main(logs):
     output("[1.1] Mutiny campaign socket connected!","fuzzer",print_queue)
     
     outbound_queue.put(START_FEEDBACK_MSG) # begin gathering feedback data.  
-
     
+
     try:
         while True:
             if kill_switch.is_set():
@@ -313,7 +340,7 @@ def main(logs):
                 output("[i.i] Blocking till Mutiny's campaign socket connected. ","fuzzer",print_queue)
                 while True:
                     if kill_switch.is_set():
-                        return
+                        break
                     try:
                         fuzzy_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
                         fuzzy_sock.connect((IP,PORT)) 
@@ -398,7 +425,9 @@ def main(logs):
                         #logs.write(dumped_fuzzer)
                         #logs.write("*******************\n") 
                         logs.flush()
-                        block_till_feedback_ready(inbound_queue)
+                        ret = block_till_feedback_ready(inbound_queue)
+                        if ret == -1:
+                            kill_switch.set()
 
                         crash_count +=1
                         fuzzer_count+=1
@@ -419,13 +448,32 @@ def main(logs):
             except Exception as e:
                 if "Broken pipe" in e:
                     continue
-                print e
-                traceback.print_exc()
                 pass
                 
     except KeyboardInterrupt:
         kill_switch.set()
-        return
+
+    while not inbound_queue.empty():
+        inbound_queue.get()
+    while not outbound_queue.empty():
+        outbound_queue.get()
+    while not print_queue.empty():
+        print_queue.get()
+    while not fuzzer_queue.empty():
+        fuzzer_queue.get()
+
+    #sys.__stdout__.write(YELLOW + "[!.!] Entering Cleanup!\n" + CLEAR)
+    #sys.__stdout__.flush()
+    for t in thread_list:
+        #sys.__stdout__.write("\n[x.x] Waiting on t %s\n"%str(t))
+        #sys.__stdout__.flush()
+        #sys.__stderr__.flush()
+        try:
+            t.terminate()
+            t.join()    
+        except:
+            continue
+
 
 
 def get_bytes(sock):
@@ -448,7 +496,7 @@ def get_bytes(sock):
 def block_till_feedback_ready(inbound_queue,kill_switch):
     while True:
         if kill_switch.is_set():
-            sys.exit()     
+            return -1
         try:
             ready = inbound_queue.get()
             if ready.split('\n')[0] == "feedback_connected":
@@ -517,7 +565,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
 
             while True:
                 if kill_switch.is_set():
-                    return
+                    break
                 try:
                     # check to see if remote sock still open.
                     #cli_sock.send(FUZZ_CASE + struct.pack(">I",curr_seed))
@@ -550,6 +598,8 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                 except Queue.Empty:
                     pass
                 except Exception as e:
+                    if "Broken pipe" in e:
+                        print "[;_;] %s"%e
                     output("[;_;] %s"%e,"feedback",print_queue,YELLOW)
                     
                 inbound_msg = get_bytes(cli_sock)
@@ -605,7 +655,12 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
             cli_sock.close()
         except KeyboardInterrupt:
             kill_switch.set()
-            return
+            break
+
+    sys.__stdout__.write(GREEN + "\n[*.*] feedback_listener thread cleaned up\n" + CLEAR)
+    sys.__stdout__.flush()
+    sys.__stderr__.flush()
+
 
 def validate_feedback(inbound):
     t = "" # type
@@ -771,7 +826,9 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
             traceback.print_exc()
 
     kill_switch.set()
-    print "[^_^] DONE!"
+    sys.__stdout__.write(GREEN + "\n[*.*] launch_corpus thread cleaned up\n" + CLEAR)
+    sys.__stdout__.flush()
+    sys.__stderr__.flush()
 
 
 # Polling cuz we don't have that much of a rush.
@@ -818,6 +875,9 @@ def corpus_minimizer(fuzzer_dir,kill_switch,print_queue):
         except:
             continue
    
+    sys.__stdout__.write(GREEN + "\n[*.*] Minimizer thread cleaned up\n" + CLEAR)
+    sys.__stdout__.flush()
+    sys.__stderr__.flush()
     '''
     try:
         with open(os.path.join(fuzzer_dir,"corpus_statistics.txt"),"wb") as f: 
@@ -996,9 +1056,9 @@ def output_thread(inp_queue,kill_switch):
 
 
             if prevlen > 0:
-                sys.__stdout__.write("\033[1;1H") 
+                #sys.__stdout__.write("\033[1;1H") 
                 sys.__stdout__.write(" "*(height * width)) 
-                sys.__stdout__.write("\033[1;1H") 
+                #sys.__stdout__.write("\033[1;1H") 
                 pass
                 
 
@@ -1009,13 +1069,14 @@ def output_thread(inp_queue,kill_switch):
             time.sleep(refreshrate)
 
         except KeyboardInterrupt:
-            sys.__stdout__.write("\033c")
-            sys.__stdout__.write(prevbuf)
-            sys.__stdout__.write(GREEN + "[^_^] Thanks for using Mutiny!\n" + CLEAR)
-            sys.__stdout__.flush()
+            #sys.__stdout__.write("\033c")
+            #sys.__stdout__.write(prevbuf)
+            #sys.__stdout__.flush()
             kill_switch.set()
-            return
-            
+            break
+
+    sys.__stdout__.write(CYAN + "[^_^] Thanks for using Mutiny!\n" + CLEAR)
+    sys.__stdout__.flush()
             
  
 
