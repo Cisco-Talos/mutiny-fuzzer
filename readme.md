@@ -9,7 +9,8 @@ as a browser request, and feed it into a prep script to generate a .fuzzer file.
 Then, Mutiny can be run with this .fuzzer file to generate traffic against a
 target host, mutating whichever packets the user would like.
 
-Mutiny uses [Radamsa](https://github.com/aoh/radamsa) to perform mutations.
+Mutiny uses [https://gitlab.com/akihe/radamsa.git](https://gitlab.com/akihe/radamsa.git) to perform mutations.
+Please use `git submodule init` to download the newest version of radamsa.
 
 Written by James Spadaro (jaspadar@cisco.com) and Lilith Wyatt (liwyatt@cisco.com)
 

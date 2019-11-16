@@ -97,7 +97,7 @@ EOFUZZ_CASE          = "\x04\x00\x00\x00\x00"
 CLEANUP_MSG          = "\x05\x00\x00\x00\x00" 
 START_FEEDBACK_MSG   = "\x06\x00\x00\x00\x00"
 STOP_FEEDBACK_MSG    = "\x07\x00\x00\x00\x00"
-HEARTBEAT            = "\x00\x00\x00\x00\x00"
+HEARTBEAT            = "\x0F\x00\x00\x00\x00"
 # msgs with variable data
 # msgs with variable data len
 
@@ -158,11 +158,13 @@ def main(logs):
     inbound_queue = multiprocessing.Queue()
     outbound_queue = multiprocessing.Queue()
     print_queue = multiprocessing.Queue()
+    fuzz_flag = multiprocessing.Event()
     thread_count = 1
 
 
     print_thread = multiprocessing.Process(target = output_thread,
                                            args=(print_queue,
+                                                 fuzz_flag, 
                                                  kill_switch)) 
     print_thread.start()
 
@@ -173,6 +175,7 @@ def main(logs):
     output("[^_^] Reading in fuzzers from %s" % fuzzer_dir,"fuzzer",print_queue)
 
     fuzzer_queue = multiprocessing.Queue()
+    # pause/resume fuzzing
     # prevent's dups from entering the fuzzer_queue
     append_lock = multiprocessing.Lock()
 
@@ -232,7 +235,7 @@ def main(logs):
         sys.exit()
 
     output("[!.!] Done loading corpus!","fuzzer",print_queue)
-    #! multithread will requeire a harness thread and fuzzy_sock per
+    #! multithread will requeire a harness thread and mutiny_control_sock per
     launch_thread = multiprocessing.Process(target = launch_corpus,
                                             args=(fuzzer_dir,
                                                   append_lock,
@@ -306,69 +309,69 @@ def main(logs):
         if kill_switch.is_set():
             return
         try:
-            fuzzy_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
-            fuzzy_sock.connect((IP,PORT)) 
+            mutiny_control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
+            mutiny_control_sock.connect((IP,PORT)) 
             break
         except Exception as e:
             #output(str(e),"feedback",print_queue) 
             time.sleep(1)
             continue
 
-    fuzzy_sock.send("go")            
-    resp = get_bytes(fuzzy_sock) 
+    mutiny_control_sock.send("go")            
+    resp = get_bytes(mutiny_control_sock) 
     time.sleep(1)
 
     output("[1.1] Mutiny campaign socket connected!","fuzzer",print_queue)
     
     outbound_queue.put(START_FEEDBACK_MSG) # begin gathering feedback data.  
-    
 
     try:
         while True:
             if kill_switch.is_set():
                 try:
-                    fuzzy_sock.send("die")
+                    mutiny_control_sock.send("die")
                 except:
                     pass
                 break
 
             # block here/wait till we get a message
-            try:
-                if "--debug" in sys.argv:
-                    raw_input("[?_?] Send next seed?")
-                fuzzy_sock.send("go")
-            except:
-                # Block till new mutiny instance is up.
-                output("[i.i] Blocking till Mutiny's campaign socket connected. ","fuzzer",print_queue)
-                while True:
-                    if kill_switch.is_set():
-                        break
-                    try:
-                        fuzzy_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
-                        fuzzy_sock.connect((IP,PORT)) 
-                        break
-                    except Exception as e:
-                        #output(str(e),"feedback",print_queue) 
-                        time.sleep(1)
-                        continue
-
-            resp = get_bytes(fuzzy_sock)
-            
-            try:
-                # this is fine/synced.
-                # resp should be csv of (curr_seed,curr_msg,curr_submsg)
-                #output(resp,"feedback",print_queue)
-                curr_seed,curr_msg,curr_submsg = filter(None,resp.split(","))
-                curr_seed = int(curr_seed) 
-                curr_msg = int(curr_msg) 
-                curr_submsg = int(curr_submsg) 
-                update_curr_msg(resp,print_queue)
-                fuzz_case_flag.set()
-            except ValueError:
-                pass
-            except Exception as e:
-                output(str(e),"fuzzer",print_queue)
-                pass
+            if fuzz_flag.is_set():
+                try:
+                    if "--debug" in sys.argv:
+                        raw_input("[?_?] Send next seed?")
+                    mutiny_control_sock.send("go")
+                except:
+                    # Block till new mutiny instance is up.
+                    output("[i.i] Blocking till Mutiny's campaign socket connected. ","fuzzer",print_queue)
+                    while True:
+                        if kill_switch.is_set():
+                            break
+                        try:
+                            mutiny_control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
+                            mutiny_control_sock.connect((IP,PORT)) 
+                            break
+                        except Exception as e:
+                            #output(str(e),"feedback",print_queue) 
+                            time.sleep(1)
+                            continue
+                
+                resp = get_bytes(mutiny_control_sock)
+        
+                try:
+                    # this is fine/synced.
+                    # resp should be csv of (curr_seed,curr_msg,curr_submsg)
+                    #output(resp,"feedback",print_queue)
+                    curr_seed,curr_msg,curr_submsg = filter(None,resp.split(","))
+                    curr_seed = int(curr_seed) 
+                    curr_msg = int(curr_msg) 
+                    curr_submsg = int(curr_submsg) 
+                    update_curr_msg(resp,print_queue)
+                    fuzz_case_flag.set()
+                except ValueError:
+                    pass
+                except Exception as e:
+                    output(str(e),"fuzzer",print_queue)
+                    pass
 
             try:
                 msg = inbound_queue.get_nowait()
@@ -378,8 +381,8 @@ def main(logs):
                         
                     if msg_type == "save_queue":   
                         # are we not reading these fast enough...?
-                        fuzzy_sock.send("delimdump")
-                        fuzzer_file = get_bytes(fuzzy_sock)
+                        mutiny_control_sock.send("delimdump")
+                        fuzzer_file = get_bytes(mutiny_control_sock)
                         fuzzer_loc = os.path.join(queue_dir,"id_delim_%08d_%d_%d_%d" % (fuzzer_count,curr_seed,curr_msg,curr_submsg)) 
                         #output("[5.5] Requesting %s to queue"%fuzzer_loc,"fuzzer",print_queue)
                         if fuzzer_file:
@@ -390,8 +393,8 @@ def main(logs):
                                 fuzzer_count+=1
                             fuzzer_queue.put(fuzzer_loc) 
 
-                        fuzzy_sock.send("fulldump")
-                        fuzzer_file = get_bytes(fuzzy_sock)
+                        mutiny_control_sock.send("fulldump")
+                        fuzzer_file = get_bytes(mutiny_control_sock)
                         fuzzer_loc = os.path.join(queue_dir,"id__full_%08d_%d_%d_%d" % (fuzzer_count,curr_seed,curr_msg,curr_submsg)) 
                         #output("[5.5] Requesting %s to queue"%fuzzer_loc,"fuzzer",print_queue)
                         if fuzzer_file:
@@ -405,13 +408,13 @@ def main(logs):
                     elif msg_type == "save_crash":   
                         crash = msg[10:] 
                         logs.write("resp:%s" % str(crash))
-                        fuzzy_sock.send("fulldump")
+                        mutiny_control_sock.send("fulldump")
                         crash_loc = os.path.join(crash_dir,"id_%08d_%d_%d_%d" % (fuzzer_count,curr_seed,curr_msg,curr_submsg)) 
                         fuzzer_count+=1
 
                         # in case there was extra data
                         if len(dumped_fuzzer) < 20:
-                            dumped_fuzzer = get_bytes(fuzzy_sock) 
+                            dumped_fuzzer = get_bytes(mutiny_control_sock) 
 
                         with open(fuzzer_loc,"w") as f:
                             f.write(dumped_fuzzer)
@@ -442,6 +445,13 @@ def main(logs):
                     elif msg_type == "timeout":
                         SOCKTIMEOUT += .1
                         output("Increasing sockettimeout to %f"%SOCKTIMEOUT,"fuzzer",print_queue)
+
+                    elif msg_type == "pause":
+                        fuzz_flag.clear() 
+
+                    elif msg_type == "resume":
+                        fuzz_flag.set()
+
                     else:
                         output("Data on inbound_queue: %s" % msg,"fuzzer",print_queue)
 
@@ -529,8 +539,11 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
     //      | (no contents)     | Fuzzer: Okay, saving it. 
     //-------------------------------------------------------------------- //
     '''
+    # these are the message types that can be sent from gluttony back to us.
     opcode_dict = {
         0x10:"save_queue",
+        0x11:"pause",
+        0x12:"resume",
         0x14:"receive_shutdown_data",
         0x1F:"save_crash",
         0xF0:"",
@@ -556,7 +569,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
 
             # Lock here till the feedback connects back
             cli_sock,cli_addr = harness_socket.accept() 
-            #cli_sock.settimeout(2)
+            cli_sock.settimeout(1)
             while not len(init_str):
                 init_str = get_bytes(cli_sock)
 
@@ -574,18 +587,18 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                     break
                 try:
                     # check to see if remote sock still open.
-                    #cli_sock.send(FUZZ_CASE + struct.pack(">I",curr_seed))
                     if fuzz_case_flag.is_set():
                         cli_sock.send(FUZZ_CASE)
                         #print "SENT FUZZ_CASE MSG"
                         fuzz_case_flag.clear()
+
                 except Exception as e:
                     print e
                     cli_sock.close()
+                    output("[^_^] Re-establishing feedback harness","feedback",print_queue)
                     cli_sock,cli_addr = harness_socket.accept() 
                     cli_sock.settimeout(2)
                     continue
-
 
                 # check if fuzzer wants to send any msg to the feedback engine
                 try:
@@ -608,12 +621,11 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                         print "[;_;] %s"%e
                     output("[;_;] %s"%e,"feedback",print_queue,YELLOW)
                     
+                
                 inbound_msg = get_bytes(cli_sock)
 
-                '''
-                if inbound_msg and len(inbound_msg) < 50:
-                    print repr(inbound_msg)
-                '''
+                #if inbound_msg and len(inbound_msg) < 50:
+                #    print repr(inbound_msg)
 
                 # strip any stray 'fin\0' that may be in
                 try:
@@ -622,10 +634,8 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                     output("[;_;] %s"%e,"feedback",print_queue,YELLOW)
 
 
-                ''' 
-                if inbound_msg and len(inbound_msg) < 50:
-                    print repr(inbound_msg)
-                '''
+                #if inbound_msg and len(inbound_msg) < 50:
+                #    print repr(inbound_msg)
 
 
                 if inbound_msg != "" and (len(inbound_msg) >= 5):           
@@ -636,6 +646,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                             inbound_queue.put("feedback_connected\n")
                             cli_sock.send("doop")
                         elif msg_chunk == HEARTBEAT:
+                            #HEARTBEAT            = "\x0F\x00\x00\x00\x00"
                             cli_sock.send(HEARTBEAT)
                         else: 
                             #if len(msg_chunk) < 5:
@@ -649,8 +660,19 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                                     if l > 0:
                                         value = inbound_msg[i+5:i+5+l]
                                         i+=l
+
+                                    #opcode_dict = {
+                                    #    0x10:"save_queue",
+                                    #    0x11:"pause"
+                                    #    0x12:"resume"
+                                    #    0x14:"receive_shutdown_data",
+                                    #    0x1F:"save_crash",
+                                    #    0xF0:"",
+                                    #}
+
                                     message = opcode_dict[t] 
                                     if message:
+                                        output("Message type received: %s"%message, "feedback",print_queue,GREEN)
                                         inbound_queue.put(message + '\n' + str(value))
                                 except Exception as e:
                                     output("validate_feedback error: %s" % str(e),"feedback",print_queue,YELLOW)
@@ -672,13 +694,11 @@ def validate_feedback(inbound):
     l = "" # length
     v = "" # value
     
-    '''
     if len(inbound) < 1000: 
         print "Validating: %s" % repr(inbound)
     else:
         print "Huge msg (0x%x): %s" % (len(inbound),repr(inbound[0:100]))
         #raw_input('[->-]')
-    '''
 
     try:
         t = ord(inbound[0])
@@ -803,7 +823,6 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                     continue
                 try:
                     fuzzy.fuzz()
-                    output("Launching new mutiny: %s" %str(args),"fuzzzer",print_queue)
                     fuzzy.sigint_handler(-1)
                 except: 
                     output("Mutiny launch failed: %s" %str(fuzzy),"fuzzer",print_queue)
@@ -905,7 +924,7 @@ def output(inp,inp_type,queue,color=""):
 
 ###########################################
 # expect entries into inp queue like ("<msg>","<catagory>",COLOR)
-def output_thread(inp_queue,kill_switch):
+def output_thread(inp_queue,fuzz_flag,kill_switch):
     fuzzer_messages = []
     feedback_messages = []
     output_width = 48
@@ -1023,10 +1042,11 @@ def output_thread(inp_queue,kill_switch):
             except:
                 queue_diff = "Never"
 
-            if curr_seed == old_seed:
-                run_status = YELLOW + "(Paused)" + CLEAR
-            else:
+            if fuzz_flag.is_set(): 
                 run_status = GREEN + "(Fuzzing)" + CLEAR
+            else:
+                run_status = YELLOW + "(Paused)" + CLEAR
+
             runtime = str(current_time - start_time).split(".")[0] 
             stat_buf = stat_messages % (runtime,run_status,crash_count,crash_diff,fuzzer_count,queue_diff)
             buf+=stat_buf

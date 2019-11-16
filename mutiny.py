@@ -57,7 +57,7 @@ from backend.fuzzer_types import Message, MessageCollection, Logger
 from mutiny_classes.mutiny_exceptions import *
 
 # Path to Radamsa binary
-RADAMSA=os.path.abspath( os.path.join(__file__, "..","radamsa-0.3","bin","radamsa") )
+RADAMSA=os.path.abspath( os.path.join(__file__, "..","radamsa","bin","radamsa") )
 # Whether to print debug info
 DEBUG_MODE=False
 
@@ -697,14 +697,12 @@ class MutinyFuzzer():
                     action = ""
                     continue
 
-
                 if action[0:3] == "len":
                     self.camp_sock.send("%s"%len(self.saved_fuzzy_message)) 
 
                 if action[0:3] == "die":
                     self.sigint_handler(1)
                     break
-            
                      
             lastMessageCollection = deepcopy(fuzzerData.messageCollection)
             wasCrashDetected = False
@@ -827,6 +825,7 @@ class MutinyFuzzer():
                             
 
                     self.output("[^_^] Potential crash@(%s) - Fuzzer: %s, Seed %d, Message %s \n"%(curr_time,self.fuzzerFilePath,self.i-1,\
+
                                                                                           fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])) 
                     
 
