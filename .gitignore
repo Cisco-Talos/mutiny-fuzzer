@@ -3,6 +3,7 @@ radamsa-*/*
 *.swo
 *.swn
 *.pyc
+*.pcap
 *_logs*
 fuzzer_log.txt
 harness.log
@@ -12,3 +13,4 @@ sample_fuzzers/*/processed/
 sample_fuzzers/*/crashes/
 autogen_pocs
 mutidumps.txt
+corpse_dance
