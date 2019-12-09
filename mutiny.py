@@ -658,8 +658,9 @@ class MutinyFuzzer():
 
         self.output("[*] Entering main fuzzing loop (target: %s|%d)"%(host,fuzzerData.port),GREEN)
         if self.fuzzerData.clientMode == True:
-            self.monitor.lockExecution() # lock till conditional is met
-            self.output("[*] Target detected, fuzzing.",GREEN)
+            if self.MAX_RUN_NUMBER != -1 and self.MAX_RUN_NUMBER != -1:
+                self.monitor.lockExecution() # lock till conditional is met
+                self.output("[*] Target detected, fuzzing.",GREEN)
         else:
             self.output("[*] Waiting for incoming packets",CYAN) 
         
@@ -703,7 +704,7 @@ class MutinyFuzzer():
                 if action[0:3] == "die":
                     self.sigint_handler(1)
                     break
-                     
+            # </if self.campaign:>         
             lastMessageCollection = deepcopy(fuzzerData.messageCollection)
             wasCrashDetected = False
 
@@ -890,6 +891,11 @@ class MutinyFuzzer():
                     self.monitor.stop_harness_trace()
                 break
 
+            # special case for 'unfuzzed' (e.g. single unfuzzed run)
+            if self.MAX_RUN_NUMBER == -1 and self.MAX_RUN_NUMBER == -1:
+                self.output("[^_^] Done with unfuzzed single mode")
+                break 
+
             if args.xploit:
                 self.generate_poc(host) 
 
@@ -998,6 +1004,10 @@ def output(self,inp,color=None,comms_sock=None):
 # Set self.MIN_RUN_NUMBER and self.MAX_RUN_NUMBER when provided
 # by the user below
 def getRunNumbersFromArgs(strArgs):
+    # special case for non-fuzzed run.
+    if strArgs == "unfuzzed":
+        return (-1,-1)
+
     if "-" in strArgs:
         testNumbers = strArgs.split("-")
         if len(testNumbers) == 2:
@@ -1030,7 +1040,7 @@ def get_mutiny_with_args(prog_args):
     parser.add_argument("-m","--msgtofuzz",help="Fuzz specific msgs. [x|x-y|x,y,z-Q] Overrides .fuzzer")
 
     seed_constraint = parser.add_mutually_exclusive_group()
-    seed_constraint.add_argument("-r", "--range", help="Run only the specified cases. Acceptable arg formats: [ X | X- | X-Y ], for integers X,Y") 
+    seed_constraint.add_argument("-r", "--range", help="Run only the specified cases. Acceptable arg formats: [ X | X- | X-Y ], for integers X,Y. Or 'unfuzzed' for a single non-fuzzed run.") 
     seed_constraint.add_argument("-l", "--loop", help="Loop/repeat the given finite number range. Acceptible arg format: [ X | X-Y | X,Y,Z-Q,R | ...]")
     seed_constraint.add_argument("-d", "--dumpraw", help="Test single seed, all packets saved seperately",type=int)
     seed_constraint.add_argument("-e", "--emulate", help="Same as '--dumpraw', but no packets sent",type=int)

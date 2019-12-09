@@ -79,47 +79,26 @@ CYAN='\033[96m'
 CLEAR='\033[00m'
 color_test = ['\033[31m','\033[91m','\033[92m','\033[99m','\033[93m','\033[94m','\033[95m','\033[96m','\033[00m']
 
-'''
-// ~~~~~~ Start Outbound socket message definitions and utilities ~~~~~~~~ 
-//msg_id| Message Direction | Explination 
-//-------------------------------------------------------------------- 
-// 0x1  | Fuzzer->ORelay    | Fuzzer: Sending first/unfuzzed testcase. 
-//      | (no contents)     | Mutitrace: Get baseline for BB trace 
-// 
-// 0x2  | Fuzzer->ORelay    | Resume previous session instead of new. 
-//      | contents: sess_id |  
-// 
-// 0x3  | Fuzzer->ORelay    | Fuzzer: Sending fuzzed test case. 
-//      | (no contents)     | Mutitrace: Clears per-run bitmap 
-//
-// 0x4  | Fuzzer->ORelay    | Fuzzer: Send me your stuff, then shutdown. 
-//                          | Gluttony: Sends stuff.
-// 0x5 
-// 0x6  | Fuzzer ->ORelay   | stop baseline, start feedback
-// 0x7  |                     pause feedback 
-'''
-#    1        4   <len>
-# [opcode][length][data] 
-INIT_NEW_TRACE       = "\x01\x00\x00\x00\x00"
-INIT_PREVIOUS_TRACE  = "\x02\x00\x00\x00\x00"
+#// ~~~~~~ Start outbound socket message definitions and utilities ~~~~~~~~ 
+# <byte opcode> <uint_32t msg_len> <msg (if any)>
 FUZZ_CASE            = "\x03\x00\x00\x00\x00"
-EOFUZZ_CASE          = "\x04\x00\x00\x00\x00"
-CLEANUP_MSG          = "\x05\x00\x00\x00\x00" 
-START_FEEDBACK_MSG   = "\x06\x00\x00\x00\x00"
-STOP_FEEDBACK_MSG    = "\x07\x00\x00\x00\x00"
+FUZZ_CASE_DONE       = "\x04\x00\x00\x00\x00" 
+TRACE_DONE           = "\x05\x00\x00\x00\x00" 
 HEARTBEAT            = "\x0F\x00\x00\x00\x00"
-'''
-// ~~~~~ Start inbound socket message defines ~~~~~
+
+#// ~~~~~~~ Start outbound message definitions and utilities ~~~~~~~
+# <byte opcode> <uint_32t msg_len> <msg (if any)>
 opcode_dict = {
     0x10:"save_queue",  #\x10 
     0x11:"pause",       #\x11
     0x12:"resume",      #\x12
     0x18:"mini_init",   #\x18
-    0x19:"mini_trace",  #\x19
+    0x19:"mini_result", #\x19
+    0x1a:"mini_ready",  #\x1A
     0x1F:"save_crash",  #\x1F
     0xF0:"",
 }
-'''
+
 
 # msgs with variable data
 # msgs with variable data len
@@ -299,7 +278,7 @@ def main(logs):
 
 
 
-    output("[!.!] Block till feedback ready!","feedback",print_queue)
+    output("[!.!] Block till feedback ready!","fuzzer",print_queue)
     ret = block_till_feedback_ready(inbound_queue,kill_switch)
     thread_list = [print_thread, launch_thread, harness_thread, corpus_minimizer_thread]
     if ret == -1:
@@ -329,7 +308,7 @@ def main(logs):
         sys.__stdout__.flush()
         return
 
-    output("[!.!] Feedback ready!","feedback",print_queue)
+    output("[!.!] Feedback ready!","fuzzer",print_queue)
     
     # Send a sample testcase for the baseline
     resp = "" 
@@ -343,7 +322,7 @@ def main(logs):
             mutiny_control_sock.connect((IP,PORT)) 
             break
         except Exception as e:
-            #output(str(e),"feedback",print_queue) 
+            #output(str(e),"fuzzer",print_queue) 
             time.sleep(1)
             continue
 
@@ -352,8 +331,7 @@ def main(logs):
     time.sleep(1)
 
     output("[1.1] Mutiny campaign socket connected!","fuzzer",print_queue)
-    
-    outbound_queue.put(START_FEEDBACK_MSG) # begin gathering feedback data.  
+    #outbound_queue.put(START_FEEDBACK_MSG) # begin gathering feedback data.  
 
     try:
         while True:
@@ -381,7 +359,7 @@ def main(logs):
                             mutiny_control_sock.connect((IP,PORT)) 
                             break
                         except Exception as e:
-                            #output(str(e),"feedback",print_queue) 
+                            #output(str(e),"fuzzer",print_queue) 
                             time.sleep(1)
                             continue
                 
@@ -390,7 +368,7 @@ def main(logs):
                 try:
                     # this is fine/synced.
                     # resp should be csv of (curr_seed,curr_msg,curr_submsg)
-                    #output(resp,"feedback",print_queue)
+                    #output(resp,"fuzzer",print_queue)
                     curr_seed,curr_msg,curr_submsg = filter(None,resp.split(","))
                     curr_seed = int(curr_seed) 
                     curr_msg = int(curr_msg) 
@@ -495,15 +473,22 @@ def main(logs):
                         fuzz_flag.set()
 
                     elif msg_type == "mini_init":
+                        output("[o.o] Pausing feedback for minimization!","fuzzer",print_queue,GREEN)
+                        new_fuzzer_queue = multiprocessing.Queue() 
                         fuzz_flag.clear()
-                        output("[o.o] Pausing feedback for minimization!","feedack",print_queue)
                         mini_dst = os.path.join(fuzzer_dir,"minimized")
-                        do_minimization(mini_dst,fuzzer_queue,print_queue,kill_switch) 
+                        mini_dict = do_minimization(mini_dst,fuzzer_queue,print_queue,kill_switch) 
+                        output("[o.o] DONE MINIMIZING","fuzzer",print_queue,GREEN)
+
+                        if mini_dict:
+                            output("[^.^] Reduced to %d fuzzers!"%(len(mini_dict)))
+                            for entry in mini_dict:
+                                new_fuzzer_queue.put(entry)
+                            fuzzer_queue = new_fuzzer_queue 
+                        else:    
+                            output("[x.x] minimization => no results.","fuzzer",print_queue) 
+    
                         fuzz_flag.set()
-                        
-                    elif msg_type == "mini_trace":
-                        # these message types should go to minimizer.py
-                        pass
 
                     else:
                         output("Data on inbound_queue: %s" % msg,"fuzzer",print_queue)
@@ -545,9 +530,9 @@ def main(logs):
     sys.__stdout__.flush()
 
 
-def get_bytes(sock):
+def get_bytes(sock,timeout=SOCKTIMEOUT):
     ret = ""
-    sock.settimeout(SOCKTIMEOUT)
+    sock.settimeout(timeout)
     try:
         while True:
             tmp = sock.recv(65535)
@@ -579,29 +564,6 @@ def block_till_feedback_ready(inbound_queue,kill_switch):
 # inbound refers to 'inbound' to control thread.
 # outbound refers to 'outbound' to this thread from control thread.
 def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,print_queue):
-    '''
-    // ~~~~~~~ Start Inbound socket message definitions and utilities ~~~~~~~ 
-    //-------------------------------------------------------------------- 
-    // 0x10 | ORelay->Fuzzer    | Mutitrace: Yo, that testcase was cool. 
-    //      | (no contents)     | Fuzzer: Okay, saving it and adding to the queue. 
-    // 
-    // 0x14 | ORelay->Fuzzer    | Mutitrace: Sending fuzzer my stuff. 
-    //      | (no contents)     | Fuzzer: okay, listening for stuff.
-    //
-    // 0x1F | ORelay->Fuzzer    | Mutitrace: prog pooped/detected a crash, save that. 
-    //      | (no contents)     | Fuzzer: Okay, saving it. 
-    //-------------------------------------------------------------------- //
-    '''
-    # these are the message types that can be sent from gluttony back to us.
-    opcode_dict = {
-        0x10:"save_queue",  #\x10 
-        0x11:"pause",       #\x11
-        0x12:"resume",      #\x12
-        0x18:"mini_init",   #\x18
-        0x19:"mini_trace",  #\x19
-        0x1F:"save_crash",  #\x1F
-        0xF0:"",
-    }
 
     cli_sock = None
     cli_addr = None
@@ -628,13 +590,13 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                 init_str = get_bytes(cli_sock)
 
             if init_str != "boop":
-                output("[>_<] Bad client init recv'ed, killing connection (%s:%d)"%cli_addr,"feedback",print_queue,YELLOW) 
+                output("[>_<] Bad client init recv'ed, killing connection (%s:%d)"%cli_addr,"fuzzer",print_queue,YELLOW) 
                 cli_sock.close()
                 continue
 
             cli_sock.send("doop")
             inbound_queue.put("feedback_connected\n")
-            output("[^_^] Feedback handshake successful!","feedback",print_queue)
+            output("[^_^] Feedback handshake successful!","fuzzer",print_queue)
 
             while True:
                 if kill_switch.is_set():
@@ -642,14 +604,14 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                 try:
                     # check to see if remote sock still open.
                     if fuzz_case_flag.is_set():
-                        cli_sock.send(FUZZ_CASE)
+                        # cli_sock.send(FUZZ_CASE) # no reason to do this
                         #print "SENT FUZZ_CASE MSG"
                         fuzz_case_flag.clear()
 
                 except Exception as e:
                     print e
                     cli_sock.close()
-                    output("[^_^] Re-establishing feedback harness","feedback",print_queue)
+                    output("[^_^] Re-establishing feedback harness","fuzzer",print_queue)
                     cli_sock,cli_addr = harness_socket.accept() 
                     cli_sock.settimeout(2)
                     continue
@@ -665,7 +627,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                         try:
                             cli_sock.send(outbound_msg)
                         except:
-                            output("[;_;] Could not send %s! Restarting socket!"%outbound_msg,"feedback",print_queue,YELLOW)
+                            output("[;_;] Could not send %s! Restarting socket!"%outbound_msg,"fuzzer",print_queue,YELLOW)
                             cli_sock.close()
                             break
                 except Queue.Empty:
@@ -673,7 +635,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                 except Exception as e:
                     if "Broken pipe" in e:
                         print "[;_;] %s"%e
-                    output("[;_;] %s"%e,"feedback",print_queue,YELLOW)
+                    output("[;_;] %s"%e,"fuzzer",print_queue,YELLOW)
                     
                 
                 inbound_msg = get_bytes(cli_sock)
@@ -685,7 +647,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                 try:
                     inbound_msg = inbound_msg.replace("fin\0","")
                 except Exception as e:
-                    output("[;_;] %s"%e,"feedback",print_queue,YELLOW)
+                    output("[;_;] %s"%e,"fuzzer",print_queue,YELLOW)
 
 
                 #if inbound_msg and len(inbound_msg) < 50:
@@ -715,22 +677,12 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                                         value = inbound_msg[i+5:i+5+l]
                                         i+=l
                                     
-                                    #opcode_dict = {
-                                    #    0x10:"save_queue",  #\x10 
-                                    #    0x11:"pause",       #\x11
-                                    #    0x12:"resume",      #\x12
-                                    #    0x18:"mini_init",   #\x18
-                                    #    0x19:"mini_trace",  #\x19
-                                    #    0x1F:"save_crash",  #\x1F
-                                    #    0xF0:"",
-                                    #}
-
                                     message = opcode_dict[t] 
                                     if message:
-                                        output("Message type received: %s"%message, "feedback",print_queue,GREEN)
+                                        output("Message type received: %s"%message, "fuzzer",print_queue,GREEN)
                                         inbound_queue.put(message + '\n' + str(value))
                                 except Exception as e:
-                                    output("validate_feedback error: %s" % str(e),"feedback",print_queue,YELLOW)
+                                    output("validate_feedback error: %s" % str(e),"fuzzer",print_queue,YELLOW)
                                     continue
                     
                           
@@ -896,7 +848,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                     continue
         
             except Exception as e:
-                output(str(e),"feedback",print_queue) 
+                output(str(e),"fuzzer",print_queue) 
                 logger.write(str(e))
                 logger.flush()
         
@@ -905,7 +857,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
             break
 
         except Exception as e:
-            output("launch_corpus error: %s" % str(e),"feedback",print_queue,YELLOW)
+            output("launch_corpus error: %s" % str(e),"fuzzer",print_queue,YELLOW)
             traceback.print_exc()
 
     kill_switch.set()
@@ -967,29 +919,201 @@ def corpus_minimizer(fuzzer_dir,kill_switch,print_queue):
         pass
     '''
 
+# This function returns a list of fuzzers that represent the 
+# minimized corpus.
+# This function drains out the fuzzer_queue and will not replace it.
 def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
     mini_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     mini_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    mini_socket.bind((MINIMIZATION_IP,MINIMIZATION_PORT))
+    mini_socket.bind((MINIMIZE_IP,MINIMIZE_PORT))
     mini_socket.listen(2)
+  
+    init_str = ""
+    mini_trace_bb_list = []
+    mini_trace_fuzzer_dict = {}
 
     while True:
-        try:
-            if kill_switch.is_set():
-                break
+        if kill_switch.is_set():
+            break
 
         # Lock here till the feedback connects back
+        output("[*] Listening for minimization connectionn...","fuzzer",print_queue,GREEN)
         cli_sock,cli_addr = mini_socket.accept() 
-        cli_sock.settimeout(1)
-        while not len(init_str):
-            init_str = get_bytes(cli_sock)
+        output("[*] Minimization connection gotted...","fuzzer",print_queue,GREEN)
 
-    # TODO: iterate through fuzz queue, send non-fuzzed message, minimize,
-    #       write back to dst_dir, populate new fuzzer_queue 
+        init_str = get_bytes(cli_sock)
+        if init_str != "mini_mini": 
+            continue
+        cli_sock.send("mini_mini_mini")
+        time.sleep(3)
+
+        while True:
+            # start iterating over the fuzzer_queue.
+            if fuzzer_queue.empty():
+                # finished, return final minimized dictionary     
+                return mini_trace_fuzzer_dict
+            
+            fuzzer = fuzzer_queue.get()
+
+            if not os.path.isfile(fuzzer):
+                continue # corpus minimizer might have removed.
+
+            with open(fuzzer,"rb") as f:
+                tmp = f.read()
+                # quick sanity check
+                if "outbound fuzz" not in tmp and "more fuzz" not in tmp:
+                    continue
+        
+            args = [fuzzer,
+                    "-r","unfuzzed",
+                    # we want to wait until it's done.
+                    #"-t",str(timeout),
+                    "-i",target_ip,
+                    #"--quiet"
+            ]
+
+            output("[*] Loading up mutiny w/args: %s"%str(args),"fuzzer",print_queue,GREEN)
+            try:
+                fuzzy = get_mutiny_with_args(args)
+            except Exception as e:
+                output("%s" %str(e),"fuzzer",print_queue)
+                continue
+
+            cli_sock.send(str(FUZZ_CASE)) # \x03\x00\x00\x00\x00
+            # gluttony resets trace data at this point
+            # need to wait till gluttony is finished
+            
+            output("[*] Waiting for trace finish...","fuzzer",print_queue,GREEN)
+
+            while True:
+                tmp_msg = get_bytes(cli_sock) 
+                if tmp_msg:
+                    try:
+                        if opcode_dict[ord(tmp_msg[0])] == "mini_ready":
+                            break 
+                        else: 
+                            output("[*] Got weird beyts:%s"%tmp_msg,"fuzzer",print_queue,YELLOW)
+                    except Exception as e:
+                        output("[*] Got weird error:%s"%str(e),"fuzzer",print_queue,YELLOW)
+                time.sleep(1)
+
+            try:
+                fuzzy.fuzz()
+                fuzzy.sigint_handler(-1)
+            except:
+                output("Minimize Launch Failed: %s" %str(fuzzy),"fuzzer",print_queue)
+
+            output("[*] Sending fuzz_case_done...","fuzzer",print_queue,GREEN)
+            
+            cli_sock.send(str(FUZZ_CASE_DONE)) # \x04\x00\x00\x00\x00
+
+            cli_sock.settimeout(30) 
+            tmp = cli_sock.recv(65535)
+
+            msg_len = -1 
+            msg_body = ""
+
+            if tmp:
+                # make sure valid message type:
+                try:
+                    if opcode_dict[ord(tmp[0])] != "mini_result":
+                        output("invalid opcode 0x%x"%ord(tmp[0]),"fuzzer",print_queue,YELLOW)
+                        # try another fuzzer I guess?
+                        continue  
+                    msg_len = struct.unpack(">I",tmp[1:5])[0]         
+                    if msg_len != len(tmp[5:]):
+                        output("invalid msglen: 0x%08x"%msg_len,"fuzzer",print_queue,YELLOW)
+                        continue
+                    msg_body = tmp[5:] 
+                except Exception as e:
+                    output('[x.x] Exception hit from feedback msg: %s'%e,"fuzzer",print_queue,YELLOW)
+                    continue
+
+                # need to make sure msg_body is intelligable and easy to parse.
+                try:
+                    mini_trace_fuzzer_dict = add_to_minimized_if_better(mini_trace_bb_list,fuzzer,msg_body,mini_trace_fuzzer_dict)
+                except Exception as e:
+                    output('[x.x] Exception hit add_to_minimized:  %s'%e,"fuzzer",print_queue,YELLOW)
+                break
+            else:
+                output("[x.x] Empty message from feedback","fuzzer",print_queue,YELLOW)
+                sleep(1)
+                continue
+
+            # do we minimize now or after?
+
+            # TODO: iterate through  minimize, write back to dst_dir, populate new fuzzer_queue 
+        
+
+        '''
+        except Exception as e:
+            output("[x.x] mini_loop exception: %s"%e,"fuzzer",print_queue,YELLOW)
+            # not sure if sock still open, but try to stop trace mode regardless.
+            try: 
+                cli_sock.send(str(TRACE_DONE)) # \x05\x00\x00\x00\x00
+            except:
+                pass
+
+            return {}
+        '''
+
+        try: 
+            cli_sock.send(str(TRACE_DONE)) # \x05\x00\x00\x00\x00
+        except:
+            pass
+
+    return mini_trace_fuzzer_dict
 
 
+# there's probably some bullshit datastructure suited for this...
+def add_to_minimized_if_better(curr_bb_list,fuzzer_name,msg_body,curr_trace_dict):
+
+    trim_entry_flag = True
+    subset_flag = True
+    add_new_flag = False
 
 
+    # format new trace as needed 
+    new_trace = msg_body.split(",") # str => list 
+    
+    # if already in dict, return
+    if new_trace in curr_trace_dict.values():
+        return curr_trace_dict    
+
+    # only python3 has list.issubset(), list.intersection... [>_>]
+    for entry in new_trace:
+        if entry not in curr_bb_list:
+            subset_flag = False
+            add_new_flag = True
+
+    # Regardless of if it's a subset or not, we still need to optimize. 
+    # Make sure that there's no current entries that are subsets of the new one.
+    for entry in curr_trace_dict:
+        trim_entry_flag = True
+        for bb in curr_trace_dict[entry]: 
+            if bb not in new_trace:
+                trim_entry_flag = False
+                break
+
+        if trim_entry_flag:
+            del(curr_trace_dict[entry])
+            add_new_flag = True
+         
+    # we add only if:
+    # 1. There are new basic blaocks that we have not seen.
+    # 2. We optimized and removed older entries in favor of new ones.
+    #TODO: register coverage?
+    if add_new_flag:
+        curr_trace_dict[fuzzer_name] = msg_body    
+    
+    return curr_trace_dict
+    
+
+    
+        
+
+
+         
 
 def update_curr_msg(curr_msg,queue):
     output(curr_msg,"curr_msg",queue)
@@ -1084,8 +1208,6 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
 
                 if inp_type == "fuzzer":
                     fuzzer_messages.append(inp)
-                elif inp_type == "feedback":
-                    feedback_messages.append(inp)
                 elif inp_type == "stats":
                     old_crash_count = crash_count
                     old_fuzzer_count = fuzzer_count
@@ -1166,7 +1288,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             buf+=" SeedRange      : [%d,%d]\n"%(lowerbound,upperbound)
             buf+=CYAN + ("*"*output_width) + "\n" + CLEAR
 
-            fuzzer_msg_limit = 4
+            fuzzer_msg_limit = 10
             msg_count = 0
             cur_len = len(fuzzer_messages)
             while msg_count < cur_len:
@@ -1179,26 +1301,12 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
                     break
                 msg_count+=1
 
-            buf+=PURPLE + ("*"*20) + "Feedback" + ("*"*20) + CLEAR + "\n"
-
-            feedback_msg_limit = 4
-            msg_count = 0
-            cur_len = len(feedback_messages)            
-            while msg_count < cur_len:
-                m = feedback_messages[msg_count]
-                buf+=(m+"\n")
-
-                if msg_count > rows_left:
-                    feedback_messages = feedback_messages[(-rows_left)-1:]
-                    break
-
-                msg_count +=1 
-
-
             if prevlen > 0:
+                '''
                 sys.__stdout__.write("\033[1;1H") 
                 sys.__stdout__.write(" "*(height * width)) 
                 sys.__stdout__.write("\033[1;1H") 
+                '''
                 pass
                 
             prevlen = len(buf)
