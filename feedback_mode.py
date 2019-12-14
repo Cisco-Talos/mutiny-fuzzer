@@ -473,7 +473,7 @@ def main(logs):
                         fuzz_flag.set()
 
                     elif msg_type == "mini_init":
-                        output("[o.o] Pausing feedback for minimization!","fuzzer",print_queue,GREEN)
+                        output("[o] Pausing feedback for minimization!","fuzzer",print_queue,GREEN)
                         new_fuzzer_queue = multiprocessing.Queue() 
                         fuzz_flag.clear()
                         mini_dst = os.path.join(fuzzer_dir,"minimized")
@@ -530,14 +530,16 @@ def main(logs):
     sys.__stdout__.flush()
 
 
-def get_bytes(sock,timeout=SOCKTIMEOUT):
+def get_bytes(sock,timeout=SOCKTIMEOUT,bytecount=65535):
     ret = ""
     sock.settimeout(timeout)
     try:
         while True:
-            tmp = sock.recv(65535)
+            tmp = sock.recv(bytecount)
             if len(tmp):
                 ret+=tmp
+                if bytecount != 65535:
+                    break 
             else:
                 break
     except Exception as e:
@@ -649,10 +651,8 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                 except Exception as e:
                     output("[;_;] %s"%e,"fuzzer",print_queue,YELLOW)
 
-
                 #if inbound_msg and len(inbound_msg) < 50:
                 #    print repr(inbound_msg)
-
 
                 if inbound_msg != "" and (len(inbound_msg) >= 5):           
                     for i in range(0,len(inbound_msg),5):
@@ -679,16 +679,15 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                                     
                                     message = opcode_dict[t] 
                                     if message:
-                                        output("Message type received: %s"%message, "fuzzer",print_queue,GREEN)
+                                        output("[?.?] Message type received: %s"%message, "fuzzer",print_queue,GREEN)
                                         inbound_queue.put(message + '\n' + str(value))
                                 except Exception as e:
                                     output("validate_feedback error: %s" % str(e),"fuzzer",print_queue,YELLOW)
                                     continue
                     
-                          
-            # Close socket, continue listening for new sessions.
-            cli_sock.close()
         except KeyboardInterrupt:
+            if cli_sock:
+                cli_sock.close()
             kill_switch.set()
             break
 
@@ -843,7 +842,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                 try:
                     dst_path =  os.path.join(processed_dir,os.path.basename(fuzzer)) 
                     os.rename(fuzzer, dst_path)
-                    output("[!.!] Finished %s" % (fuzzer),"fuzzer",print_queue) 
+                    output("[!] Finished %s" % (fuzzer),"fuzzer",print_queue) 
                 except:
                     continue
         
@@ -934,6 +933,7 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
     
     cli_sock = None
     cli_addr = None
+    first_send_flag = True
 
     while True:
         if kill_switch.is_set():
@@ -975,6 +975,11 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
                     "-i",target_ip,
                     "--quiet"
             ]
+        
+            if mutiny_args:
+                args += mutiny_args
+            
+
 
             output("[*] Loading up mutiny w/args: %s"%str(args),"fuzzer",print_queue,GREEN)
             try:
@@ -983,23 +988,43 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
                 output("%s" %str(e),"fuzzer",print_queue)
                 continue
 
-            cli_sock.send(str(FUZZ_CASE)) # \x03\x00\x00\x00\x00
-            # gluttony resets trace data at this point
-            # need to wait till gluttony is finished
-            
-            output("[*] Waiting for trace finish...","fuzzer",print_queue,GREEN)
 
-            while True:
-                tmp_msg = get_bytes(cli_sock) 
+            if first_send_flag: 
+                cli_sock.send(str(FUZZ_CASE)) # \x03\x00\x00\x00\x00
+                first_send_flag = False
+                # gluttony resets trace data at this point
+                # need to wait till gluttony is finished
+                output("[*] Waiting for trace finish...","fuzzer",print_queue,GREEN)
+
+            tmp_msg = ""
+            while not tmp_msg:
+                tmp_msg = get_bytes(cli_sock,bytecount=5) 
                 if tmp_msg:
                     try:
                         if opcode_dict[ord(tmp_msg[0])] == "mini_ready":
+                            output("[*] Trace finish gotted","fuzzer",print_queue,GREEN)
                             break 
                         else: 
                             output("[*] Got weird beyts:%s"%tmp_msg,"fuzzer",print_queue,YELLOW)
+                            tmp_msg = ""
                     except Exception as e:
                         output("[*] Got weird error:%s"%str(e),"fuzzer",print_queue,YELLOW)
+                        tmp_msg = ""
                 time.sleep(1)
+
+            output("[*] Sending fuzz_case_done...","fuzzer",print_queue,GREEN)
+            try:
+                cli_sock.send(str(FUZZ_CASE_DONE)) # \x04\x00\x00\x00\x00
+                output("[*] Sendt fuzz_case_done...","fuzzer",print_queue,GREEN)
+            except BrokenPipeError:
+                # feedback reset or something, ignore and re-establish/retry this case.
+                fuzzer_queue.put(fuzzer)
+                cli_sock = None
+                break
+
+            output("[*] Sent fuzz_case_done...","fuzzer",print_queue,GREEN)
+
+            output("[*]Fuzzing...","fuzzer",print_queue,GREEN)
 
             try:
                 fuzzy.fuzz()
@@ -1008,55 +1033,53 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
                 output("Minimize Launch Failed: %s" %str(fuzzy),"fuzzer",print_queue)
                 continue
 
-            output("[*] Sending fuzz_case_done...","fuzzer",print_queue,GREEN)
             
+            tmp_msg = ""
             try:
-                cli_sock.send(str(FUZZ_CASE_DONE)) # \x04\x00\x00\x00\x00
-            except BrokenPipeError:
-                # feedback reset or something, ignore and re-establish/retry this case.
-                fuzzer_queue.put(fuzzer)
-                cli_sock = None
-                continue
-    
-            cli_sock.settimeout(30) 
-
-            try:
-                tmp = cli_sock.recv(65535)
+                output("[*] Waiting for ret trace buffer...","fuzzer",print_queue,GREEN)
+                while not tmp_msg:
+                    tmp_msg = get_bytes(cli_sock,bytecount=5) 
+                    time.sleep(1)
             except Exception as e:
                 # feedback reset or something, ignore and re-establish/retry this case.
+                output("[?.?] str(e) => %s"%str(e),print_queue,YELLOW)
+                output("[v.v] Empty msg recv'd","fuzzer",print_queue,YELLOW)
                 fuzzer_queue.put(fuzzer)
                 cli_sock = None
                 continue
 
+            output("[<.<] Received buffer, %s"%repr(tmp_msg),"fuzzer",print_queue,CYAN)
             msg_len = -1 
             msg_body = ""
 
-            if tmp:
+            if tmp_msg:
                 # make sure valid message type:
                 try:
-                    if opcode_dict[ord(tmp[0])] != "mini_result":
-                        output("invalid opcode 0x%x"%ord(tmp[0]),"fuzzer",print_queue,YELLOW)
+                    if opcode_dict[ord(tmp_msg[0])] != "mini_result":
+                        output("invalid opcode 0x%x"%ord(tmp_msg[0]),"fuzzer",print_queue,YELLOW)
                         # try another fuzzer I guess?
                         continue  
-                    msg_len = struct.unpack(">I",tmp[1:5])[0]         
-                    
-                    if msg_len != len(tmp[5:]):
-                        output("[*] invalid msglen: 0x%08x, expected: 0x%08x"%(msg_len,len(tmp[5:])),"fuzzer",print_queue,YELLOW)
-                        continue
-                    msg_body = tmp[5:] 
+                    msg_len = struct.unpack(">I",tmp_msg[1:5])[0]         
+
                 except Exception as e:
                     output('[x.x] Exception hit from feedback msg: %s'%e,"fuzzer",print_queue,YELLOW)
                     continue
+                
+                msg_body = get_bytes(cli_sock,bytecount=msg_len)
+                if not msg_body:
+                    output("[x.x] Empty message body from feedback","fuzzer",print_queue,YELLOW)
+
 
                 # need to make sure msg_body is intelligable and easy to parse.
                 try:
                     mini_trace_fuzzer_dict = add_to_minimized_if_better(mini_trace_bb_list,fuzzer,msg_body,mini_trace_fuzzer_dict)
+                    output("[<.<] mini_trace_fuzzer_dict %s"%repr(mini_trace_fuzzer_dict),"fuzzer",print_queue,GREEN)
                 except Exception as e:
                     output('[x.x] Exception hit add_to_minimized:  %s'%e,"fuzzer",print_queue,YELLOW)
-                break
+                continue
             else:
                 output("[x.x] Empty message from feedback","fuzzer",print_queue,YELLOW)
-                sleep(1)
+                time.sleep(1)
                 continue
 
             # do we minimize now or after?
@@ -1077,10 +1100,12 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
         '''
 
         try: 
+            output("[!.!] Sending Trace done!","fuzzer",print_queue,YELLOW)
             cli_sock.send(str(TRACE_DONE)) # \x05\x00\x00\x00\x00
         except:
             pass
 
+    output("[<.<] Done minimizing, unique entries: %d"%len(mini_trace_fuzzer_dict),"fuzzer",print_queue,GREEN)
     return mini_trace_fuzzer_dict
 
 
@@ -1090,6 +1115,7 @@ def add_to_minimized_if_better(curr_bb_list,fuzzer_name,msg_body,curr_trace_dict
     trim_entry_flag = True
     subset_flag = True
     add_new_flag = False
+    delete_list = []
 
 
     # format new trace as needed 
@@ -1115,22 +1141,22 @@ def add_to_minimized_if_better(curr_bb_list,fuzzer_name,msg_body,curr_trace_dict
                 break
 
         if trim_entry_flag:
-            del(curr_trace_dict[entry])
+            delete_list.append(entry)
             add_new_flag = True
          
+        
     # we add only if:
     # 1. There are new basic blaocks that we have not seen.
     # 2. We optimized and removed older entries in favor of new ones.
     #TODO: register coverage?
     if add_new_flag:
         curr_trace_dict[fuzzer_name] = msg_body    
+        for entry in delete_list:
+            # have to do this seperate as python doesn't like changing dicts during iter. 
+            del(curr_trace_dict[entry])
     
     return curr_trace_dict
     
-
-    
-        
-
 
          
 
@@ -1154,7 +1180,8 @@ def output(inp,inp_type,queue,color=""):
 # expect entries into inp queue like ("<msg>","<catagory>",COLOR)
 def output_thread(inp_queue,fuzz_flag,kill_switch):
     fuzzer_log_messages = []
-    old_fuzzer_log_messages = []
+    total_fuzzer_log_messages = []
+    update_fuzzer_log_messages = False
     output_width = 48
     
     # Output => pretty. Yay.
@@ -1207,6 +1234,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
     height = int(rows)
     width = int(columns)
     old_width = width
+    old_height = height
 
     sys.__stdout__.write("\n"*height) 
     sys.__stdout__.write("\033[0;0H")
@@ -1224,7 +1252,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             height = int(rows)
             width = int(columns)
 
-            if width != old_width:
+            if width != old_width or old_height != old_height:
                 sys.__stdout__.write("\033[0;0H")
                 banner_buf = "\n".join(banner_messages) + "\n"
                 baseline_newline_count = banner_buf.count("\n")+1 
@@ -1248,6 +1276,8 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
 
                 if inp_type == "fuzzer":
                     fuzzer_log_messages.append(inp)
+                    total_fuzzer_log_messages.append(inp)
+                    update_fuzzer_log_messages = True
                 elif inp_type == "stats":
                     old_crash_count = crash_count
                     old_fuzzer_count = fuzzer_count
@@ -1317,7 +1347,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
 
             stat_buf+="\n"
 
-            if old_stat_buf != stat_buf or width != old_width:
+            if old_stat_buf != stat_buf or width != old_width or old_height != height:
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
                 sys.__stdout__.write(" "*(current_new_line_count * width)) 
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
@@ -1328,14 +1358,14 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
 
             fuzzer_buf = "" 
             curr_fuzzer_dir = "/".join(curr_fuzzer.split("/")[:-1])
-            fuzzer_buf+=CYAN + ("*"*21) + "Fuzzer" + ("*"*21) + "\n" + CLEAR
+            fuzzer_buf+=CYAN + ("*"*21) + "Stats" + ("*"*22) + "\n" + CLEAR
             fuzzer_buf+=" Current Fuzzer : " + curr_fuzzer_dir + "\n" 
             fuzzer_buf+= (" "*18) + os.path.basename(curr_fuzzer) + "\n"
             fuzzer_buf+=" Current Seed   : %08d"%curr_seed + "| Msg(%d.%d)" %(curr_msg,curr_submsg) +  "\n"
             fuzzer_buf+=" SeedRange      : [%d,%d]\n"%(lowerbound,upperbound)
             fuzzer_buf+=CYAN + ("*"*output_width) + "\n" + CLEAR
     
-            if old_fuzzer_buf != fuzzer_buf or width != old_width:
+            if old_fuzzer_buf != fuzzer_buf or width != old_width or old_height != height:
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
                 sys.__stdout__.write(" "*(current_new_line_count * width)) 
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
@@ -1348,7 +1378,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             log_count = 0
             cur_log_len = len(fuzzer_log_messages)
             
-            if old_fuzzer_log_messages != fuzzer_log_messages or old_width != width: 
+            if update_fuzzer_log_messages or old_width != width or old_height != height: 
                 log_buf = "" 
                 while log_count < cur_log_len:
                     m = fuzzer_log_messages[log_count]
@@ -1359,29 +1389,41 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
                         fuzzer_log_messages = fuzzer_log_messages[(-1*fuzzer_log_limit)-1:]
                         break
                     log_count+=1
+                update_fuzzer_log_messages = False
 
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
                 sys.__stdout__.write(" "*(current_new_line_count * width)) 
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
                 sys.__stdout__.write(log_buf) 
-                old_fuzzer_log_messages = fuzzer_log_messages[:]
 
             current_new_line_count += len(fuzzer_log_messages)
             sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+
+            if current_new_line_count < height: 
+                sys.__stdout__.write(" "*( (height - current_new_line_count) * width)) 
+                sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+
             sys.__stdout__.flush()
             time.sleep(refreshrate)
-            
+             
             prevbuf = banner_buf + stat_buf + fuzzer_buf + log_buf 
             old_width = width
+            old_height = height
 
         except KeyboardInterrupt:
-            #sys.__stdout__.write("\033c")
-            sys.__stdout__.write(prevbuf)
+            sys.__stdout__.write(GREEN + "\n[v.v] Ctrl+C => cleaning up....\n" + CLEAR)
             sys.__stdout__.flush()
             kill_switch.set()
             break
         except Exception as e:
             oops()
+
+    # would need to maintain entire log for this to be useful...
+    if len(total_fuzzer_log_messages):
+        with open(".feedback_log.txt","w") as f:
+            f.write(stat_buf) 
+            f.write(fuzzer_buf) 
+            f.write("\n".join(["%s\n"%x for x in total_fuzzer_log_messages])) 
 
     #sys.__stdout__.write(GREEN + "\n[*.*] print_thread cleaned up\n" + CLEAR)
     #sys.__stdout__.flush()
