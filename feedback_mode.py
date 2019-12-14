@@ -931,15 +931,19 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
     init_str = ""
     mini_trace_bb_list = []
     mini_trace_fuzzer_dict = {}
+    
+    cli_sock = None
+    cli_addr = None
 
     while True:
         if kill_switch.is_set():
             break
 
         # Lock here till the feedback connects back
-        output("[*] Listening for minimization connectionn...","fuzzer",print_queue,GREEN)
-        cli_sock,cli_addr = mini_socket.accept() 
-        output("[*] Minimization connection gotted...","fuzzer",print_queue,GREEN)
+        if not cli_sock:
+            output("[*] Listening for minimization connectionn...","fuzzer",print_queue,GREEN)
+            cli_sock,cli_addr = mini_socket.accept() 
+            output("[*] Minimization connection gotted...","fuzzer",print_queue,GREEN)
 
         init_str = get_bytes(cli_sock)
         if init_str != "mini_mini": 
@@ -969,7 +973,7 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
                     # we want to wait until it's done.
                     #"-t",str(timeout),
                     "-i",target_ip,
-                    #"--quiet"
+                    "--quiet"
             ]
 
             output("[*] Loading up mutiny w/args: %s"%str(args),"fuzzer",print_queue,GREEN)
@@ -1002,13 +1006,27 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
                 fuzzy.sigint_handler(-1)
             except:
                 output("Minimize Launch Failed: %s" %str(fuzzy),"fuzzer",print_queue)
+                continue
 
             output("[*] Sending fuzz_case_done...","fuzzer",print_queue,GREEN)
             
-            cli_sock.send(str(FUZZ_CASE_DONE)) # \x04\x00\x00\x00\x00
-
+            try:
+                cli_sock.send(str(FUZZ_CASE_DONE)) # \x04\x00\x00\x00\x00
+            except BrokenPipeError:
+                # feedback reset or something, ignore and re-establish/retry this case.
+                fuzzer_queue.put(fuzzer)
+                cli_sock = None
+                continue
+    
             cli_sock.settimeout(30) 
-            tmp = cli_sock.recv(65535)
+
+            try:
+                tmp = cli_sock.recv(65535)
+            except Exception as e:
+                # feedback reset or something, ignore and re-establish/retry this case.
+                fuzzer_queue.put(fuzzer)
+                cli_sock = None
+                continue
 
             msg_len = -1 
             msg_body = ""
@@ -1021,8 +1039,9 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
                         # try another fuzzer I guess?
                         continue  
                     msg_len = struct.unpack(">I",tmp[1:5])[0]         
+                    
                     if msg_len != len(tmp[5:]):
-                        output("invalid msglen: 0x%08x"%msg_len,"fuzzer",print_queue,YELLOW)
+                        output("[*] invalid msglen: 0x%08x, expected: 0x%08x"%(msg_len,len(tmp[5:])),"fuzzer",print_queue,YELLOW)
                         continue
                     msg_body = tmp[5:] 
                 except Exception as e:
@@ -1134,8 +1153,8 @@ def output(inp,inp_type,queue,color=""):
 ###########################################
 # expect entries into inp queue like ("<msg>","<catagory>",COLOR)
 def output_thread(inp_queue,fuzz_flag,kill_switch):
-    fuzzer_messages = []
-    feedback_messages = []
+    fuzzer_log_messages = []
+    old_fuzzer_log_messages = []
     output_width = 48
     
     # Output => pretty. Yay.
@@ -1166,11 +1185,13 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
     current_time = datetime.datetime.now()
 
     refreshrate = 1
-    prevlen = 0
     crash_count = 0
     fuzzer_count = 0
     new_count = 0
     processed_count = 0
+
+    old_stat_buf = ""
+    old_fuzzer_buf = ""
     
     lowerbound = 0
     upperbound = 0
@@ -1179,12 +1200,23 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
     curr_msg = 0
     curr_submsg = 0
     old_seed = 0
-    sys.__stdout__.write("\033c") 
-    sys.__stdout__.flush()
+    banner_buf = ""
+    log_buf = "" 
 
+    rows, columns = os.popen('stty size', 'r').read().split()
+    height = int(rows)
+    width = int(columns)
+
+    sys.__stdout__.write("\n"*height) 
+    sys.__stdout__.write("\033[0;0H")
+    banner_buf = "\n".join(banner_messages) + "\n"
+    baseline_newline_count = banner_buf.count("\n") 
+    sys.__stdout__.write(banner_buf)
+    sys.__stdout__.flush()
 
     while not kill_switch.is_set():
         try:
+            current_new_line_count = baseline_newline_count
             current_time = datetime.datetime.now()
             buf = ""
             rows, columns = os.popen('stty size', 'r').read().split()
@@ -1207,7 +1239,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
                     inp=("%s%s%s" % (color,str(inp),CLEAR))
 
                 if inp_type == "fuzzer":
-                    fuzzer_messages.append(inp)
+                    fuzzer_log_messages.append(inp)
                 elif inp_type == "stats":
                     old_crash_count = crash_count
                     old_fuzzer_count = fuzzer_count
@@ -1252,9 +1284,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
                 else:
                     continue
 
-            for i in range(0,len(banner_messages)):
-                m = banner_messages[i]
-                buf+=(m+"\n")
+
 
             # update time differences
             try:
@@ -1276,44 +1306,64 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
                                        crash_count,crash_diff,\
                                        fuzzer_count,queue_diff,\
                                        processed_count,new_count)
-            buf+=stat_buf
-            buf+="\n"
 
+            stat_buf+="\n"
 
+            if old_stat_buf != stat_buf:
+                sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+                sys.__stdout__.write(" "*(current_new_line_count * width)) 
+                sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+                sys.__stdout__.write(stat_buf) 
+                old_stat_buf = stat_buf
+
+            current_new_line_count += stat_buf.count("\n")
+
+            fuzzer_buf = "" 
             curr_fuzzer_dir = "/".join(curr_fuzzer.split("/")[:-1])
-            buf+=CYAN + ("*"*21) + "Fuzzer" + ("*"*21) + "\n" + CLEAR
-            buf+=" Current Fuzzer : " + curr_fuzzer_dir + "\n" 
-            buf+= (" "*18) + os.path.basename(curr_fuzzer) + "\n"
-            buf+=" Current Seed   : %08d"%curr_seed + "| Msg(%d.%d)" %(curr_msg,curr_submsg) +  "\n"
-            buf+=" SeedRange      : [%d,%d]\n"%(lowerbound,upperbound)
-            buf+=CYAN + ("*"*output_width) + "\n" + CLEAR
+            fuzzer_buf+=CYAN + ("*"*21) + "Fuzzer" + ("*"*21) + "\n" + CLEAR
+            fuzzer_buf+=" Current Fuzzer : " + curr_fuzzer_dir + "\n" 
+            fuzzer_buf+= (" "*18) + os.path.basename(curr_fuzzer) + "\n"
+            fuzzer_buf+=" Current Seed   : %08d"%curr_seed + "| Msg(%d.%d)" %(curr_msg,curr_submsg) +  "\n"
+            fuzzer_buf+=" SeedRange      : [%d,%d]\n"%(lowerbound,upperbound)
+            fuzzer_buf+=CYAN + ("*"*output_width) + "\n" + CLEAR
+    
+            if old_fuzzer_buf != fuzzer_buf:
+                sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+                sys.__stdout__.write(" "*(current_new_line_count * width)) 
+                sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+                sys.__stdout__.write(fuzzer_buf) 
+                old_fuzzer_buf = fuzzer_buf
 
-            fuzzer_msg_limit = 10
-            msg_count = 0
-            cur_len = len(fuzzer_messages)
-            while msg_count < cur_len:
-                m = fuzzer_messages[msg_count]
-                if len(m) > width: 
-                    m = m[:width-4] + "..."
-                buf+=(m+"\n")
-                if msg_count > fuzzer_msg_limit:
-                    fuzzer_messages = fuzzer_messages[(-1*fuzzer_msg_limit)-1:]
-                    break
-                msg_count+=1
+            current_new_line_count += fuzzer_buf.count("\n")
+   
+            fuzzer_log_limit = 10
+            log_count = 0
+            cur_log_len = len(fuzzer_log_messages)
+            
+            if old_fuzzer_log_messages != fuzzer_log_messages: 
+                log_buf = "" 
+                while log_count < cur_log_len:
+                    m = fuzzer_log_messages[log_count]
+                    if len(m) > width: 
+                        m = m[:width-4] + "..."
+                    log_buf+=(m+"\n")
+                    if log_count > fuzzer_log_limit:
+                        fuzzer_log_messages = fuzzer_log_messages[(-1*fuzzer_log_limit)-1:]
+                        break
+                    log_count+=1
 
-            if prevlen > 0:
-                '''
-                sys.__stdout__.write("\033[1;1H") 
-                sys.__stdout__.write(" "*(height * width)) 
-                sys.__stdout__.write("\033[1;1H") 
-                '''
-                pass
-                
-            prevlen = len(buf)
-            prevbuf = buf
-            sys.__stdout__.write(buf)
+                sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+                sys.__stdout__.write(" "*(current_new_line_count * width)) 
+                sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
+                sys.__stdout__.write(log_buf) 
+                old_fuzzer_log_messages = fuzzer_log_messages[:]
+
+            current_new_line_count += len(fuzzer_log_messages)
+            sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
             sys.__stdout__.flush()
             time.sleep(refreshrate)
+            
+            prevbuf = banner_buf + stat_buf + fuzzer_buf + log_buf 
 
         except KeyboardInterrupt:
             #sys.__stdout__.write("\033c")
