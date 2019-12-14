@@ -1206,11 +1206,12 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
     rows, columns = os.popen('stty size', 'r').read().split()
     height = int(rows)
     width = int(columns)
+    old_width = width
 
     sys.__stdout__.write("\n"*height) 
     sys.__stdout__.write("\033[0;0H")
     banner_buf = "\n".join(banner_messages) + "\n"
-    baseline_newline_count = banner_buf.count("\n") 
+    baseline_newline_count = banner_buf.count("\n")+1 
     sys.__stdout__.write(banner_buf)
     sys.__stdout__.flush()
 
@@ -1222,6 +1223,13 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             rows, columns = os.popen('stty size', 'r').read().split()
             height = int(rows)
             width = int(columns)
+
+            if width != old_width:
+                sys.__stdout__.write("\033[0;0H")
+                banner_buf = "\n".join(banner_messages) + "\n"
+                baseline_newline_count = banner_buf.count("\n")+1 
+                sys.__stdout__.write(banner_buf)
+                sys.__stdout__.flush()
 
             row_count = 0
             rows_left = 0
@@ -1309,7 +1317,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
 
             stat_buf+="\n"
 
-            if old_stat_buf != stat_buf:
+            if old_stat_buf != stat_buf or width != old_width:
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
                 sys.__stdout__.write(" "*(current_new_line_count * width)) 
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
@@ -1327,7 +1335,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             fuzzer_buf+=" SeedRange      : [%d,%d]\n"%(lowerbound,upperbound)
             fuzzer_buf+=CYAN + ("*"*output_width) + "\n" + CLEAR
     
-            if old_fuzzer_buf != fuzzer_buf:
+            if old_fuzzer_buf != fuzzer_buf or width != old_width:
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
                 sys.__stdout__.write(" "*(current_new_line_count * width)) 
                 sys.__stdout__.write("\033[%d;1H"%current_new_line_count) 
@@ -1340,7 +1348,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             log_count = 0
             cur_log_len = len(fuzzer_log_messages)
             
-            if old_fuzzer_log_messages != fuzzer_log_messages: 
+            if old_fuzzer_log_messages != fuzzer_log_messages or old_width != width: 
                 log_buf = "" 
                 while log_count < cur_log_len:
                     m = fuzzer_log_messages[log_count]
@@ -1364,6 +1372,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             time.sleep(refreshrate)
             
             prevbuf = banner_buf + stat_buf + fuzzer_buf + log_buf 
+            old_width = width
 
         except KeyboardInterrupt:
             #sys.__stdout__.write("\033c")
