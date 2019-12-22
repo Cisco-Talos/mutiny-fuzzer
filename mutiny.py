@@ -892,7 +892,7 @@ class MutinyFuzzer():
                 break
 
             # special case for 'unfuzzed' (e.g. single unfuzzed run)
-            if self.MAX_RUN_NUMBER == -1 and self.MAX_RUN_NUMBER == -1:
+            if self.MAX_RUN_NUMBER == -1 and self.MIN_RUN_NUMBER == -1:
                 self.output("[^_^] Done with unfuzzed single mode")
                 break 
 
@@ -904,7 +904,7 @@ class MutinyFuzzer():
                     self.monitor.stop_harness_trace()
                 break
 
-        #self.output("hit end of fuzz loop")
+        self.output("hit end of fuzz loop")
 
 
     def output(self,inp,color=None,comms_sock=None):
