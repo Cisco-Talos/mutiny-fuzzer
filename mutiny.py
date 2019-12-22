@@ -909,8 +909,6 @@ class MutinyFuzzer():
 
     def output(self,inp,color=None,comms_sock=None):
         inp = str(inp)
-        if self.args.quiet:
-            return
 
         buf = ""
         if color:
@@ -927,6 +925,10 @@ class MutinyFuzzer():
                 self.fuzzer_messages.append(buf)
             else:
                 self.important_messages.append(buf)
+            
+            # still want the logs.
+            if self.args.quiet:
+                return
 
             os.system('clear')
             

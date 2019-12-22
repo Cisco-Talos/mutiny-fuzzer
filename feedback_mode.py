@@ -1,4 +1,4 @@
-#!/bin/python
+#!/usr/bin/env python
 #------------------------------------------------------------------
 # November 2014, created within ASIG
 # Author James Spadaro (jaspadar)
@@ -753,6 +753,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
     processed_dir = os.path.join(fuzzer_dir,"processed")
 
     processed_count = 0
+    repeat_flag = False
     
     while True:
         try:
@@ -779,7 +780,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
             '''
                 
             # if still empty, keep fuzzing with same fuzzer
-            if not fuzzer_queue.empty():
+            if not fuzzer_queue.empty() and not repeat_flag:
                 fuzzer = fuzzer_queue.get()
 
                 if not os.path.isfile(fuzzer):
@@ -792,6 +793,11 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                         continue
 
                 repeat_counter = 0
+            elif not fuzzer_queue.empty() and repeat_flag:
+                repeat_flag = False
+                output("[v.v] Sleeping 3, then repeating failed fuzzy.fuzz()","fuzzer",print_queue)
+                time.sleep()
+            
             else:
                 repeat_counter += 1
                 processed = os.path.join(processed_dir,os.path.basename(fuzzer))
@@ -816,7 +822,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                             #"-t",str(timeout), 
                             "-i",target_ip,
                             "-R",str(amt_per_fuzzer/10),
-                            "--quiet"
+                            #"--quiet"
                     ]
                 else:
                     try:
@@ -850,8 +856,17 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                 try:
                     fuzzy.fuzz()
                     fuzzy.sigint_handler(-1)
-                except: 
-                    output("Mutiny launch failed: %s" %str(fuzzy),"fuzzer",print_queue)
+                except Exception as e: 
+                    try:
+                        last_logs = fuzzy.important_messages[-2:-1] + fuzzy.fuzzer_messages[-2:-1]
+                        for ll in last_logs:
+                            output("Mutiny log: %s"%ll,"fuzzer",print_queue)
+                    except:
+                        output("[x.x] Mutiny fuzz error: %s"%e,"fuzzer",print_queue)
+                        repeat_flag = True
+                        continue
+                        
+                        
 
                 processed_count+=1
                 # Move over to processed_fuzzer dir if we got through entire fuzzer. 
