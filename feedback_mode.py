@@ -59,7 +59,6 @@ MINIMIZE_PORT = 61603
 
 SOCKTIMEOUT = .05 
 FUZZERTIMEOUT = .1
-CASES_PER_FUZZER = 1000
 
 logger = None
 process_respawn_time = 1
@@ -248,7 +247,6 @@ def main(logs):
                                                   append_lock,
                                                   fuzzer_queue,
                                                   PORT,
-                                                  CASES_PER_FUZZER,
                                                   FUZZERTIMEOUT,
                                                   kill_switch,mutiny_args,print_queue))
 
@@ -622,9 +620,9 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                 try:
                     # check to see if remote sock still open.
                     if fuzz_case_flag.is_set():
-                        # cli_sock.send(FUZZ_CASE) # no reason to do this
-                        #print "SENT FUZZ_CASE MSG"
-                        fuzz_case_flag.clear()
+                        cli_sock.send(FUZZ_CASE) # We do this such that the feedback knows if it's a new fuzz case or not.
+                        #print "SENT FUZZ_CASE"  # since it can hit multiple breakpoints off one seed, it will chekc the socket
+                        fuzz_case_flag.clear()   # for anything before dumping (such that it only dumps once)
 
                 except Exception as e:
                     print e
@@ -695,7 +693,7 @@ def feedback_listener(inbound_queue,outbound_queue,kill_switch,fuzz_case_flag,pr
                                     
                                     message = opcode_dict[t] 
                                     if message:
-                                        output("[?.?] Message type received: %s"%message, "fuzzer",print_queue,GREEN)
+                                        #output("[?.?] Message type received: %s"%message, "fuzzer",print_queue,GREEN)
                                         inbound_queue.put(message + '\n' + str(value))
                                 except Exception as e:
                                     output("validate_feedback error: %s" % str(e),"fuzzer",print_queue,YELLOW)
@@ -716,11 +714,13 @@ def validate_feedback(inbound):
     l = "" # length
     v = "" # value
     
+    '''
     if len(inbound) < 1000: 
         print "Validating: %s" % repr(inbound)
     else:
         print "Huge msg (0x%x): %s" % (len(inbound),repr(inbound[0:100]))
         #raw_input('[->-]')
+    '''
 
     try:
         t = ord(inbound[0])
@@ -744,9 +744,7 @@ def validate_feedback(inbound):
 
     return None
 
-def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzzer,timeout,kill_switch,mutiny_args,print_queue):
-    lowerbound=0
-    upperbound=amt_per_fuzzer
+def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_switch,mutiny_args,print_queue):
     repeat_counter = 0
     crash_dir = os.path.join(fuzzer_dir,"crashes")
     queue_dir = os.path.join(fuzzer_dir,"queue")
@@ -754,6 +752,53 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
 
     processed_count = 0
     repeat_flag = False
+
+
+    output("[^_^] Rotating over initial corpus unfuzzed","fuzzer",print_queue,CYAN)
+    tmp_list = []
+
+    while not fuzzer_queue.empty():
+        tmp_list.append(fuzzer_queue.get())
+        #output("unfuzzed %s"%tmp_list[-1],"fuzzer",print_queue)
+        tmp_args = [ 
+            tmp_list[-1],  
+             "-i", target_ip,    
+             "-r", "unfuzzed",
+             "--quiet",
+             "--timeout",".1"
+           ]                
+        
+        if "-p" in mutiny_args:
+            try:
+                tmp_args.append("-p")
+                tmp_args.append(mutiny_args[mutiny_args.index("-p")+1])
+            except:
+                pass
+
+        try:
+            fuzzy = get_mutiny_with_args(tmp_args)
+        except Exception as e: 
+            print "[>_>] Invalid args given: %s" % str(mutiny_args)
+            output("%s" %str(e),"fuzzer",print_queue)
+            continue
+        
+        try:
+            fuzzy.fuzz()
+            fuzzy.sigint_handler(-1)
+        except Exception as e: 
+            try:
+                last_logs = fuzzy.important_messages[-2:-1] + fuzzy.fuzzer_messages[-2:-1]
+                for ll in last_logs:
+                    output("Mutiny log: %s"%ll,"fuzzer",print_queue)
+            except:
+                output("[x.x] Mutiny fuzz error: %s"%e,"fuzzer",print_queue)
+                continue
+                 
+    for i in tmp_list:
+        fuzzer_queue.put(i)
+    
+    output("[^_^] Done rotating over initial corpus","fuzzer",print_queue,GREEN)
+    output("      Please start feedback with `boop feedback` in gluttony","fuzzer",print_queue,GREEN)
     
     while True:
         try:
@@ -808,6 +853,18 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                 except:
                     continue 
 
+            amt_per_fuzzer = 10000
+
+            if "-r" in mutiny_args:
+                try:
+                    ind = mutiny_args.index("-r") 
+                    lb,rb = mutiny_args[ind+1].split("-")
+                    amt_per_fuzzer = int(rb) - int(lb)
+                except ValueError:
+                    pass
+                except:
+                    pass
+                
             lowerbound = (amt_per_fuzzer * repeat_counter) 
             upperbound = (amt_per_fuzzer * (repeat_counter+1)) 
 
@@ -821,7 +878,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                             # we want to wait until it's done.
                             #"-t",str(timeout), 
                             "-i",target_ip,
-                            "-R",str(amt_per_fuzzer/10),
+                            #"-R",str(amt_per_fuzzer),
                             #"--quiet"
                     ]
                 else:
@@ -832,6 +889,10 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                                  "--quiet"
                                ]                
                         args += mutiny_args 
+                        if "-r" not in args:
+                            args.append("-r")
+                            args.append("%d-%d"%(lowerbound,upperbound))
+                            output("[^.^] Seed range %d-%d"%(lowerbound,upperbound),"fuzzer",print_queue)
                     except:
                         print "[>_>] Invalid args given: %s" % str(mutiny_args)
 
@@ -1296,7 +1357,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             height = int(rows)
             width = int(columns)
 
-            if width != old_width or old_height != old_height:
+            if width != old_width or height != old_height:
                 sys.__stdout__.write("\033[0;0H")
                 banner_buf = "\n".join(banner_messages) + "\n"
                 baseline_newline_count = banner_buf.count("\n")+1 
@@ -1376,6 +1437,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
                 queue_diff = str(current_time - last_queue_time).split(".")[0]
             except:
                 queue_diff = "Never"
+
 
             if fuzz_flag.is_set(): 
                 run_status = GREEN + "(Fuzzing)" + CLEAR
