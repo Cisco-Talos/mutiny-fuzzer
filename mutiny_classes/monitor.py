@@ -60,7 +60,7 @@ class Monitor(object):
     def monitorTarget(self, targetIP, targetPort, lock_condition):
         self.targetIP = targetIP
         self.targetPort = targetPort     
-        self.lock_condition = self.lock_condition
+        self.lock_condition = lock_condition
 
         self.retIP = targetIP
         self.retPort = targetPort        
