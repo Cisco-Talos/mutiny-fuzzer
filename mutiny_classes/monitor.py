@@ -55,7 +55,7 @@ class Monitor(object):
         self.harness_port = -1
         self.targetIP = ""
         self.targetPort = 0
-        
+
     # This function will run asynchronously in a different thread to monitor the host
     def monitorTarget(self, targetIP, targetPort, lock_condition):
         self.targetIP = targetIP
@@ -71,7 +71,6 @@ class Monitor(object):
     # just keep execution locked up here until unlockCondition is met
     def lockExecution(self):
         ret_val = ""
-        print "Monitor locking execution till condition met" 
         # uncomment if you want monitoring, change testing_bin to whatever.
         while not len(ret_val):
             #ret_val = self.lockCondition("always_unlocked")
@@ -83,7 +82,7 @@ class Monitor(object):
 
     # a given lockCondition should return a value on unlock and "" or None on still locked.
     def lockCondition(self,condition,*args): 
-        #print "Condition: %s, args: %s"%(condition,args)
+        #print("Condition: %s, args: %s"%(condition,args))
         lock_dict = {
                     "remote_tcp_open": self.remote_tcp_open,
                     "local_process_listen":self.local_process_listen,
@@ -121,7 +120,7 @@ class Monitor(object):
             return "%s|%d"%(IP,PORT)   
         except Exception as e:
             if "Connection" not in str(e):
-                print str(e)
+                print(str(e))
             return ""
                 
             
@@ -135,8 +134,8 @@ class Monitor(object):
         port_test = subprocess.Popen(["/bin/netstat","-antp"],stdout=subprocess.PIPE)
         grep_filter= subprocess.Popen(["/bin/grep","-e",process_name],stdin=port_test.stdout,stdout=subprocess.PIPE)
         port_list = grep_filter.communicate()[0] 
-        if port_list:
-            print port_list
+        if port_list: 
+            print(port_list)
         # no hits, keep locked
         if not len(port_list):
             return ""
@@ -151,7 +150,7 @@ class Monitor(object):
                 tmp = tmp.replace(":","|")
                 return tmp     # e.g. 127.0.0.1|8307
         except Exception as e:
-            print e 
+            print(str(e)) 
             return ""
 
         return ""

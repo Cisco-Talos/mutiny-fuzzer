@@ -658,7 +658,8 @@ class MutinyFuzzer():
 
         self.output("[*] Entering main fuzzing loop (target: %s|%d)"%(host,fuzzerData.port),GREEN)
         if self.fuzzerData.clientMode == True:
-            if self.MAX_RUN_NUMBER != -1 and self.MAX_RUN_NUMBER != -1:
+            if self.MIN_RUN_NUMBER != -1 or self.MAX_RUN_NUMBER != -1:
+                self.output("Monitor locking execution till condition met",YELLOW)
                 self.monitor.lockExecution() # lock till conditional is met
                 self.output("[*] Target detected, fuzzing.",GREEN)
         else:
@@ -806,18 +807,18 @@ class MutinyFuzzer():
                         i = orig_timeout   
         
                     crash_output = ""
-                    if self.crash_client != None:
+                    if self.crash_socket != None:
                         try:
                             while True:
                                 try:
-                                    tmp = cli_sock.recv(65535)  
+                                    tmp = crash_sock.recv(65535)  
                                     if tmp:
                                         crash_output+=tmp
                                     else:
                                         break
                                 except socket.timeout:
                                     break
-                            cli_sock.close() 
+                            crash_sock.close() 
                             self.output("[^_^] Got crash output...%d bytes"%len(crash_output))
                         except:
                             pass 
@@ -909,6 +910,8 @@ class MutinyFuzzer():
 
     def output(self,inp,color=None,comms_sock=None):
         inp = str(inp)
+        if not inp:
+            return
 
         buf = ""
         if color:

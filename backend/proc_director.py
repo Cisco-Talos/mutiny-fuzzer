@@ -96,6 +96,7 @@ class ProcDirector(object):
         self.monitor = sys.modules['monitor'].Monitor 
         self.crashQueue = Event()
     
+    '''
     class MonitorWrapper(object):
         def __init__(self, targetIP, targetPort, condition, monitor):
             # crashDetectedEvent signals main thread on a detected crash,
@@ -111,6 +112,7 @@ class ProcDirector(object):
     def startMonitor(self, host, port,condition):
         self.monitorWrapper = self.MonitorWrapper(host, port, condition, self.monitor())
         return self.monitorWrapper
+    '''
         
     def getMonitor(self,host,port,lock_condition):
         mon = self.monitor()

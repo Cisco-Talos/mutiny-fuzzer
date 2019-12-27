@@ -47,7 +47,7 @@ from mutiny import *
 
 # used for mutiny campaign socket. 
 IP = "127.0.0.1"
-PORT = 61602
+CAMPAIGN_PORT = 61602
 
 # used for feedback direction exclusively.
 FEEDBACK_IP = "0.0.0.0"
@@ -57,11 +57,10 @@ FEEDBACK_PORT = 61601
 MINIMIZE_IP = "0.0.0.0"
 MINIMIZE_PORT = 61603
 
-SOCKTIMEOUT = .05 
+SOCKTIMEOUT = .01 
 FUZZERTIMEOUT = .1
 
 logger = None
-process_respawn_time = 1
 
 RED='\033[31m'
 ORANGE='\033[91m'
@@ -246,8 +245,7 @@ def main(logs):
                                             args=(fuzzer_dir,
                                                   append_lock,
                                                   fuzzer_queue,
-                                                  PORT,
-                                                  FUZZERTIMEOUT,
+                                                  CAMPAIGN_PORT,
                                                   kill_switch,mutiny_args,print_queue))
 
     launch_thread.daemon=True
@@ -264,19 +262,21 @@ def main(logs):
     time.sleep(1)
 
     output("[!.!] Done Spawning harness thread!","fuzzer",print_queue)
-    corpus_minimizer_thread = multiprocessing.Process(target = corpus_minimizer,
-                                                     args = (fuzzer_dir,
-                                                             kill_switch,
-                                                             print_queue))
-    corpus_minimizer_thread.start()
 
-    output("[!.!] Done Spawning minimizer thread!","fuzzer",print_queue)
+    # don't need corpus 'minimizer' since we actually have real minimization support now.
+    #corpus_minimizer_thread = multiprocessing.Process(target = corpus_minimizer,
+    #                                                 args = (fuzzer_dir,
+    #                                                         kill_switch,
+    #                                                         print_queue))
+    #corpus_minimizer_thread.start()
+    #output("[!.!] Done Spawning minimizer thread!","fuzzer",print_queue)
 
 
 
     output("[!.!] Block till feedback ready!","fuzzer",print_queue)
     ret = block_till_feedback_ready(inbound_queue,kill_switch)
-    thread_list = [print_thread, launch_thread, harness_thread, corpus_minimizer_thread]
+    thread_list = [print_thread, launch_thread, harness_thread] 
+    
     if ret == -1:
         #sys.__stdout__.write(YELLOW + "[!.!] Ctrl+C => Entering Cleanup!\n" + CLEAR)
         #sys.__stdout__.flush()
@@ -315,7 +315,7 @@ def main(logs):
             return
         try:
             mutiny_control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
-            mutiny_control_sock.connect((IP,PORT)) 
+            mutiny_control_sock.connect((IP,CAMPAIGN_PORT)) 
             break
         except Exception as e:
             #output(str(e),"fuzzer",print_queue) 
@@ -352,7 +352,7 @@ def main(logs):
                             break
                         try:
                             mutiny_control_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
-                            mutiny_control_sock.connect((IP,PORT)) 
+                            mutiny_control_sock.connect((IP,CAMPAIGN_PORT)) 
                             break
                         except Exception as e:
                             #output(str(e),"fuzzer",print_queue) 
@@ -502,7 +502,7 @@ def main(logs):
                                 fuzz_flag.set()
                         else:    
                             output("[x.x] minimization => no results.","fuzzer",print_queue) 
-    
+
 
                     else:
                         output("Data on inbound_queue: %s" % msg,"fuzzer",print_queue)
@@ -744,7 +744,8 @@ def validate_feedback(inbound):
 
     return None
 
-def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_switch,mutiny_args,print_queue):
+def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,kill_switch,mutiny_args,print_queue):
+    timeout = FUZZERTIMEOUT
     repeat_counter = 0
     crash_dir = os.path.join(fuzzer_dir,"crashes")
     queue_dir = os.path.join(fuzzer_dir,"queue")
@@ -756,16 +757,28 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_
 
     output("[^_^] Rotating over initial corpus unfuzzed","fuzzer",print_queue,CYAN)
     tmp_list = []
+    replace_list = []
 
     while not fuzzer_queue.empty():
-        tmp_list.append(fuzzer_queue.get())
-        #output("unfuzzed %s"%tmp_list[-1],"fuzzer",print_queue)
+        item = fuzzer_queue.get()
+        tmp_list.append(item)
+        replace_list.append(item)
+
+    # also include processed fuzzers...
+    for processed in os.listdir(processed_dir):
+        filename = os.path.join(processed_dir,processed)
+        tmp_list.append(filename)
+    
+    while len(tmp_list):
+        fuzzer_file = tmp_list.pop()
+        output('[o.o] Testing unfuzzed (%d left): %s'%(len(tmp_list),fuzzer_file),"fuzzer",print_queue)
+
         tmp_args = [ 
-            tmp_list[-1],  
+             fuzzer_file,
              "-i", target_ip,    
              "-r", "unfuzzed",
              "--quiet",
-             "--timeout",".1"
+             "--timeout",".05"
            ]                
         
         if "-p" in mutiny_args:
@@ -778,12 +791,13 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_
         try:
             fuzzy = get_mutiny_with_args(tmp_args)
         except Exception as e: 
-            print "[>_>] Invalid args given: %s" % str(mutiny_args)
+            output("[>_>] Invalid args given: %s" % str(tmp_args),"fuzzer",print_queue)
             output("%s" %str(e),"fuzzer",print_queue)
             continue
         
         try:
-            fuzzy.fuzz()
+            fuzzy.monitor.lockExecution() # must specify since normally mutiny doesn't wait
+            fuzzy.fuzz()                  # when doing an unfuzzed case.
             fuzzy.sigint_handler(-1)
         except Exception as e: 
             try:
@@ -795,7 +809,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_
                 output("[x.x] Mutiny fuzz error: %s"%e,"fuzzer",print_queue)
                 continue
                  
-    for i in tmp_list:
+    for i in replace_list:
         fuzzer_queue.put(i)
         time.sleep(.1)
     
@@ -806,14 +820,27 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_
     while True:
         try:
             # check for .fuzzer files in queue from parent thread.
-        
+            '''
             if fuzzer_queue.empty():    
+                output("[._.] Fuzzer queue empty, taking actions...","fuzzer",print_queue,YELLOW)
                 if append_lock.acquire(block=True,timeout=4):
                     new_fuzzer_list = os.listdir(queue_dir)
                     for f in new_fuzzer_list:
                         fuzzer_queue.put(os.path.join(queue_dir,f)) 
+                        time.sleep(.01)
                     append_lock.release()
-                
+                repeat_counter = 0
+            '''
+
+            # did we get anything? no? then just repopulate and hit next set of seeds.
+            if fuzzer_queue.empty():    
+                output("[._.] Starting on next set of seeds.","fuzzer",print_queue,YELLOW)
+                repeat_counter += 1
+                processed = os.listdir(processed_dir)
+                for f in processed:
+                    fuzzer_queue.put(os.path.join(processed_dir,f)) 
+                    time.sleep(.01)
+                    
             '''
             #
             # if still empty, check controller for extra cases via network/http. 
@@ -826,9 +853,13 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_
                     with open(fuzzer_name,"w") as f:
                         f.write(fuzzer_contents)
             '''
-                
-            # if still empty, keep fuzzing with same fuzzer
-            if not fuzzer_queue.empty() and not repeat_flag:
+            if repeat_flag:
+                # repeat last fuzzer.
+                repeat_flag = False
+                output("[v.v] Sleeping 3, then repeating failed fuzzy.fuzz()","fuzzer",print_queue)
+                time.sleep(3)
+   
+            elif not repeat_flag:
                 fuzzer = fuzzer_queue.get()
 
                 if not os.path.isfile(fuzzer):
@@ -840,36 +871,23 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_
                     if "outbound fuzz" not in tmp and "more fuzz" not in tmp:
                         continue
 
-                repeat_counter = 0
-            elif not fuzzer_queue.empty() and repeat_flag:
-                repeat_flag = False
-                output("[v.v] Sleeping 3, then repeating failed fuzzy.fuzz()","fuzzer",print_queue)
-                time.sleep()
+                        
             
-            else:
-                repeat_counter += 1
-                processed = os.path.join(processed_dir,os.path.basename(fuzzer))
-                #output("processed: %s" % processed,"fuzzer",print_queue,YELLOW)
-                #output("fuzzer: %s" % fuzzer,"fuzzer",print_queue,YELLOW)
-                try:
-                    os.rename(processed,fuzzer) 
-                except:
-                    continue 
-
             amt_per_fuzzer = 10000
 
             if "-r" in mutiny_args:
                 try:
                     ind = mutiny_args.index("-r") 
-                    lb,rb = mutiny_args[ind+1].split("-")
-                    amt_per_fuzzer = int(rb) - int(lb)
+                    lowerbound,upperbound = [int(x) for x in  mutiny_args[ind+1].split("-")]
+                    amt_per_fuzzer = upperbound - lowerbound
                 except ValueError:
                     pass
                 except:
                     pass
                 
-            lowerbound = (amt_per_fuzzer * repeat_counter) 
-            upperbound = (amt_per_fuzzer * (repeat_counter+1)) 
+            else:
+                lowerbound = (amt_per_fuzzer * repeat_counter) 
+                upperbound = (amt_per_fuzzer * (repeat_counter+1)) 
 
             update_curr_fuzzer((fuzzer,lowerbound,upperbound),print_queue)
 
@@ -895,7 +913,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,timeout,kill_
                         if "-r" not in args:
                             args.append("-r")
                             args.append("%d-%d"%(lowerbound,upperbound))
-                            output("[^.^] Seed range %d-%d"%(lowerbound,upperbound),"fuzzer",print_queue)
+                            #output("[^.^] Seed range %d-%d"%(lowerbound,upperbound),"fuzzer",print_queue)
                     except:
                         print "[>_>] Invalid args given: %s" % str(mutiny_args)
 
@@ -1047,11 +1065,17 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
         time.sleep(3)
 
         initial_len = fuzzer_queue.qsize()
+
+        # repopulate all the processed fuzzers
+        for processed in os.listdir(processed_dir):
+            fuzzer_queue.put(os.path.join(processed_dir,processed))
+            time.sleep(.1)
+        
+
         while True:
             # start iterating over the fuzzer_queue.
             if fuzzer_queue.empty():
                 break
-            
             
             fuzzer = fuzzer_queue.get()
 
@@ -1075,8 +1099,6 @@ def do_minimization(dst_dir,fuzzer_queue,print_queue,kill_switch):
         
             if mutiny_args:
                 args += mutiny_args
-            
-
 
             output("[*] Loading up mutiny w/args: %s"%str(args),"fuzzer",print_queue,CLEAR)
             try:
@@ -1359,7 +1381,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
     sys.__stdout__.write("\033[0;0H")
     banner_buf = "\n".join(banner_messages) + "\n"
     baseline_newline_count = banner_buf.count("\n")+1 
-    sys.__stdout__.write(banner_buf)
+    sys.__stdout__.write(banner_buf%dancers[0])
     sys.__stdout__.flush()
     autorefresh = True
     
@@ -1544,6 +1566,7 @@ def output_thread(inp_queue,fuzz_flag,kill_switch):
             old_height = height
 
         except KeyboardInterrupt:
+            sys.__stdout__.write("\033[%d;1H"%height) 
             sys.__stdout__.write(GREEN + "\n[v.v] Ctrl+C => cleaning up....\n" + CLEAR)
             sys.__stdout__.flush()
             kill_switch.set()
