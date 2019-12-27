@@ -927,8 +927,6 @@ class MutinyFuzzer():
             if inp.startswith("Message"):
                 self.fuzzer_messages.append(buf)
             else:
-                if not buf:
-                    return
                 self.important_messages.append(buf)
             
             # still want the logs.
