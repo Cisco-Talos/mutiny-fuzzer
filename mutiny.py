@@ -666,45 +666,62 @@ class MutinyFuzzer():
             self.output("[*] Waiting for incoming packets",CYAN) 
         
         #print "Fuzzing %d-%d" %(self.MIN_RUN_NUMBER,self.MAX_RUN_NUMBER)
+        action= "" 
         while True:
             i = self.i 
             if self.campaign:
                 #self.output("[m.m] boop",CYAN)
-                action = self.camp_sock.recv(4096) 
-                #self.output("[m.m] doop %s"%repr(action),CYAN)
-                if action[0:2] == "go": 
-                    msg = float(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])
-                    m,sm = str(msg).split(".")
-                    resp = "%d,%s,%s"%(i-1,m,sm)
-                    self.camp_sock.send(resp) # an ack of sorts
+                while not action:
+                    try:
+                        action = self.camp_sock.recv(2) 
+                    except:
+                        pass
 
-                if "delimdump" in action:
-                    # dump the new .fuzzer to a string to send back to campaign
-                    #self.output("Dumping current seed delim: %d"%(self.i-1))
-                    new_fuzzer = deepcopy(self.fuzzerData)
-                    self.output("saved fuzzy message: %s"%resp)
-                    new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
-                    self.camp_sock.send(new_fuzzer.writeToFD(delim="\\n"))
-                    action = ""
-                    continue
+                    self.output("[m.m] doop %s"%repr(action),CYAN)
+                    if action == "go": 
+                        #currenlty: bunch of goes.
+                        msg = float(fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz])
+                        m,sm = str(msg).split(".")
+                        resp = "%d,%s,%s"%(i,m,sm)
+                        self.camp_sock.send(resp) # an ack of sorts
+                        action = ""
+                        break
 
-                if "fulldump" in action:
-                    # dump the new .fuzzer to a string to send back to campaign
-                    #self.output("Dumping current seed full: %d"%(self.i-1))
-                    new_fuzzer = deepcopy(self.fuzzerData)
-                    new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
-                    self.output("saved fuzzy message: %s"%resp)
-                    self.camp_sock.send(new_fuzzer.writeToFD(delim=""))
-                    self.output("saved fuzzy message: %s"%resp)
-                    action = ""
-                    continue
+                    elif action == "de":
+                        # dump the new .fuzzer to a string to send back to campaign
+                        #self.output("Dumping current seed delim: %d"%(self.i-1))
+                        new_fuzzer = deepcopy(self.fuzzerData)
+                        self.output("saved fuzzy message: %s"%resp)
+                        new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
+                        self.camp_sock.send(new_fuzzer.writeToFD(delim="\\n"))
+                        action = ""
+                        continue
 
-                if action[0:3] == "len":
-                    self.camp_sock.send("%s"%len(self.saved_fuzzy_message)) 
+                    elif action == "fd":
+                        # dump the new .fuzzer to a string to send back to campaign
+                        #self.output("Dumping current seed full: %d"%(self.i-1))
+                        new_fuzzer = deepcopy(self.fuzzerData)
+                        new_fuzzer.editCurrentlyFuzzedMessage(self.saved_fuzzy_message)
+                        self.output("saved fuzzy message: %s"%resp)
+                        self.camp_sock.send(new_fuzzer.writeToFD(delim=""))
+                        self.output("saved fuzzy message: %s"%resp)
+                        action = ""
+                        continue
 
-                if action[0:3] == "die":
-                    self.sigint_handler(1)
-                    break
+                    elif action == "ln":
+                        self.camp_sock.send("%s"%len(self.saved_fuzzy_message)) 
+                        action = ""
+
+                    elif action == "di":
+                        self.sigint_handler(1)
+                        break
+
+                    else:
+                        action = ""
+                        continue
+            
+
+                
             # </if self.campaign:>         
             lastMessageCollection = deepcopy(fuzzerData.messageCollection)
             wasCrashDetected = False
@@ -722,6 +739,14 @@ class MutinyFuzzer():
 
                     self.i = self.curr_seed_base 
                     i = self.i
+            
+            # Behave different with campaign, since the harness controls. 
+            if self.campaign:
+                self.output("\n**Fuzzing with seed %d, Message %s" % (i,fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
+                status = self.performRun(fuzzerData, host, messageProcessor, seed=i) 
+                self.i += 1
+                continue
+
             try:
                 try:
                     if args.dumpraw or args.emulate:
@@ -741,10 +766,12 @@ class MutinyFuzzer():
                         #self.output("\n**Fuzzing with seed %d, Message %s" % (i,fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
                         status = self.performRun(fuzzerData, host, messageProcessor, seed=i) 
                         orig_timeout = -1
+
                         if status == -1:
                             continue 
                          
                 except Exception as e:
+                    
                     self.output(str(e))
                     if self.monitor.crashEvent.isSet():
                         self.output("Crash event detected",LIME)
