@@ -998,9 +998,12 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,mutiny_args,pr
                                 ind = mutiny_args.index("-p")
                                 args.append("-p")
                                 args.append(str(int(mutiny_args[ind+1])+(thread_num)))
-                                mutiny_args = mutiny_args[:ind] + mutiny_args[ind+2:]
+                                args += mutiny_args[:ind] + mutiny_args[ind+2:]
                             except:
                                 args += mutiny_args 
+                        
+                        else:
+                            args += mutiny_args 
 
                         if "-r" not in mutiny_args:
                             args.append("-r")
@@ -1011,12 +1014,8 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,mutiny_args,pr
                             args.append(str(timeout)) 
                             output("Setting timeout to %s" %str(timeout),"fuzzer",print_queue,thread_num)
                         
-                        args += mutiny_args
-            
                     except:
                         oops()
-                        
-
                 
                 logger.write("\n-------------------------------\n")
                 logger.write(str(datetime.datetime.now()) + "\n")

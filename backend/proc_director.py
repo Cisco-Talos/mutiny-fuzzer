@@ -69,7 +69,10 @@ class ProcDirector(object):
                 if not quiet:
                     print("Loaded message processor: {0}".format(fuzzerLoc))
                 filelist.remove("message_processor") 
-                os.remove(fuzzerLoc + "c")
+                try:
+                    os.remove(fuzzerLoc + "c")
+                except:
+                    pass
             except Exception as e:
                 print "[x.x] Could not load %s!" % fuzzerLoc
                 print e
