@@ -722,7 +722,6 @@ class MutinyFuzzer():
             
 
                 
-            # </if self.campaign:>         
             lastMessageCollection = deepcopy(fuzzerData.messageCollection)
             wasCrashDetected = False
 
@@ -745,6 +744,19 @@ class MutinyFuzzer():
                 self.output("\n**Fuzzing with seed %d, Message %s" % (i,fuzzerData.messagesToFuzz[fuzzerData.currentMessageToFuzz]),CYAN)
                 status = self.performRun(fuzzerData, host, messageProcessor, seed=i) 
                 self.i += 1
+
+                # Stop if we have a maximum and have hit it
+                if self.MAX_RUN_NUMBER >= 0 and self.i > self.MAX_RUN_NUMBER:
+                    self.output("Hit maximum")
+                    if args.harness:
+                        self.monitor.stop_harness_trace()
+                    break
+
+                # special case for 'unfuzzed' (e.g. single unfuzzed run)
+                if self.MAX_RUN_NUMBER == -1 and self.MIN_RUN_NUMBER == -1:
+                    self.output("[^_^] Done with unfuzzed single mode")
+                    break 
+
                 continue
 
             try:
