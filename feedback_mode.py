@@ -791,7 +791,7 @@ def feedback_listener(inbound_queue,kill_switch,fuzz_case_flag,print_queue,insta
                                     
                                     message = opcode_dict[t] 
                                     if message:
-                                        output("[?.?] Message type received: %s"%message, "fuzzer",print_queue,instance_num,GREEN)
+                                        #output("[?.?] Message type received: %s"%message, "fuzzer",print_queue,instance_num,GREEN)
                                         inbound_queue.put(message + '\n' + str(value))
                                 except Exception as e:
                                     output("validate_feedback error: %s" % str(e),"fuzzer",print_queue,instance_num,YELLOW)
@@ -905,6 +905,8 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
         output("      Please start feedback with `boop feedback` in gluttony","fuzzer",print_queue,color=GREEN)
         output("      or minimization with `boop mini`","fuzzer",print_queue,color=GREEN)
     
+    lowerbound = 0
+    upperbound=0
     while True:
         try:
             # check for new fuzzers if using shared corpus.
@@ -913,6 +915,9 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
                 append_lock.acquire()
                 new_fuzzer_list = os.listdir(queue_dir)
                 for f in filter(None,new_fuzzer_list):
+                    if f.startswith(".") or f.endswith(".swp"):
+                        continue
+            
                     fuzzer_queue.put(os.path.join(queue_dir,f)) 
                     time.sleep(.01)
                 append_lock.release()
@@ -950,21 +955,23 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
                         continue
 
             amt_per_fuzzer = 10000
-            lowerbound = 0
-            upperbound=0
             try:
                 ind = mutiny_args.index("-r") 
                 lowerbound,upperbound = [int(x) for x in mutiny_args[ind+1].split("-")]
                 amt_per_fuzzer = upperbound - lowerbound
-                mutiny_args.append("-r")
-                mutiny_args.append("%d-%d"%(lowerbound + (amt_per_fuzzer*repeat_counter),lowerbound+(amt_per_fuzzer*(repeat_counter+1))))
-                mutiny_args = mutiny_args[:ind] + mutiny_args[ind+2:]
-            except ValueError:
-                pass
-            
-            lowerbound = lowerbound + (amt_per_fuzzer * repeat_counter) 
-            upperbound = lowerbound + (amt_per_fuzzer * (repeat_counter+1)) 
+                try:
+                    mutiny_args = mutiny_args[:ind] + mutiny_args[ind+2:]
+                except IndexError:
+                    mutiny_args = mutiny_args[:ind]
 
+            except ValueError:
+                lowerbound = lowerbound + (amt_per_fuzzer * repeat_counter) 
+                upperbound = lowerbound + (amt_per_fuzzer * (repeat_counter+1)) 
+
+            mutiny_args.append("-r")
+            mutiny_args.append("%d-%d"%(lowerbound + (amt_per_fuzzer*repeat_counter),lowerbound+(amt_per_fuzzer*(repeat_counter+1))))
+
+            
             update_curr_fuzzer((fuzzer,lowerbound,upperbound),print_queue,thread_num)
 
             try:
@@ -1042,8 +1049,8 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
                             output("Mutiny log: %s"%ll,"fuzzer",print_queue)
                     except:
                         output("[x.x] Mutiny fuzz error: %s"%e,"fuzzer",print_queue,thread_num)
-                        repeat_flag = True
-                        continue
+                    repeat_flag = True
+                    continue
                         
                         
 
