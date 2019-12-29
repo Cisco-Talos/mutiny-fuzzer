@@ -457,7 +457,7 @@ def fuzz_target(logs,fc,cc,nc,fq,inbound_queue,print_queue,instance_num,kill_swi
 
                 try:
                     resp = get_bytes(mutiny_control_sock,timeout=1,bytecount=128)
-                    output("resp ? %s"%resp,"fuzzer",print_queue)
+                    #output("resp ? %s"%resp,"fuzzer",print_queue)
                 except Exception as e:
                     output("resp socket error: %s"%str(e),"fuzzer",print_queue)
                     pass
