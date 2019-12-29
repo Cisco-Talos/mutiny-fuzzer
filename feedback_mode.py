@@ -265,6 +265,7 @@ def main(logs):
                                                        append_lock,
                                                        fuzzer_queue,
                                                        kill_switch,
+                                                       fuzz_flag_list[thread_num],
                                                        mutiny_args[:],
                                                        print_queue,
                                                        unfuzzed_list[:], 
@@ -433,6 +434,8 @@ def fuzz_target(logs,fc,cc,nc,fq,inbound_queue,print_queue,instance_num,kill_swi
 
             # block here/wait till we get a message
             if fuzz_case_flag.is_set():
+                resp = ""
+
                 try:
                     if "--debug" in sys.argv:
                         raw_input("[?_?] Send next seed?")
@@ -451,37 +454,42 @@ def fuzz_target(logs,fc,cc,nc,fq,inbound_queue,print_queue,instance_num,kill_swi
                             #output(str(e),"fuzzer",print_queue) 
                             time.sleep(1)
                             continue
-                resp = ""
-                while not resp:
-                    resp = get_bytes(mutiny_control_sock,bytecount=128)
-        
+
                 try:
-                    # this is fine/synced.
-                    # resp should be csv of (curr_seed,curr_msg,curr_submsg)
-                    #output("resp: %s"%resp,"fuzzer",print_queue) 
-                    curr_seed,curr_msg,curr_submsg = filter(None,resp.split(","))
-                    curr_seed = int(curr_seed) 
-                    curr_msg = int(curr_msg) 
-                    curr_submsg = int(curr_submsg) 
-                    update_curr_msg(resp,print_queue,instance_num)
-
-                except ValueError as e:
-                    #output("Campaign value error: %s"%str(e),"fuzzer",print_queue)
-                    continue
-
+                    resp = get_bytes(mutiny_control_sock,timeout=1,bytecount=128)
+                    output("resp ? %s"%resp,"fuzzer",print_queue)
                 except Exception as e:
-                    output("General campaign socket error: %s"%str(e),"fuzzer",print_queue)
+                    output("resp socket error: %s"%str(e),"fuzzer",print_queue)
                     pass
+        
+                if resp:
+                    try:
+                        # this is fine/synced.
+                        # resp should be csv of (curr_seed,curr_msg,curr_submsg)
+                        #output("resp: %s"%resp,"fuzzer",print_queue) 
+                        curr_seed,curr_msg,curr_submsg = filter(None,resp.split(","))
+                        curr_seed = int(curr_seed) 
+                        curr_msg = int(curr_msg) 
+                        curr_submsg = int(curr_submsg) 
+                        update_curr_msg(resp,print_queue,instance_num)
+
+                    except ValueError as e:
+                        #output("Campaign value error: %s"%str(e),"fuzzer",print_queue)
+                        continue
+
+                    except Exception as e:
+                        output("General campaign socket error: %s"%str(e),"fuzzer",print_queue)
+                        pass
 
 
             try:
                 msg = inbound_queue.get_nowait()
                 if len(msg):
                     # pause so there's no amibuity 
-                    fuzz_case_flag.clear()
 
                     msg_type = msg.split("\n")[0]
                     if msg_type == "save_queue":   
+                        fuzz_case_flag.clear()
                         try:
                             # are we not reading these fast enough...?
                             #output("[5.5] saving dump","fuzzer",print_queue,instance_num)
@@ -528,7 +536,10 @@ def fuzz_target(logs,fc,cc,nc,fq,inbound_queue,print_queue,instance_num,kill_swi
                         except Exception as e:
                             output("[?.?] Fuzzcase queue'ing error: %s"%str(e),"fuzzer",print_queue,instance_num)
 
+                        fuzz_case_flag.set()
+
                     elif msg_type == "save_crash":   
+                        fuzz_case_flag.clear()
                         crash = msg[10:] 
                         logs.write("resp:%s" % str(crash))
                         mutiny_control_sock.send("fulldump")
@@ -564,6 +575,7 @@ def fuzz_target(logs,fc,cc,nc,fq,inbound_queue,print_queue,instance_num,kill_swi
                             update_feedback_stats(crash_count,fuzzer_count,new_count,print_queue,instance_num)
                         except: 
                             oops()
+                        fuzz_case_flag.set()
     
                     elif msg_type == "shutdown_data":   
                         msg_data = msg[13:] 
@@ -624,7 +636,6 @@ def fuzz_target(logs,fc,cc,nc,fq,inbound_queue,print_queue,instance_num,kill_swi
                     else:
                         output("Data on inbound_queue: %s" % msg,"fuzzer",print_queue)
 
-                    fuzz_case_flag.set()
 
             except Queue.Empty:
                 pass
@@ -780,7 +791,7 @@ def feedback_listener(inbound_queue,kill_switch,fuzz_case_flag,print_queue,insta
                                     
                                     message = opcode_dict[t] 
                                     if message:
-                                        #output("[?.?] Message type received: %s"%message, "fuzzer",print_queue,GREEN)
+                                        output("[?.?] Message type received: %s"%message, "fuzzer",print_queue,instance_num,GREEN)
                                         inbound_queue.put(message + '\n' + str(value))
                                 except Exception as e:
                                     output("validate_feedback error: %s" % str(e),"fuzzer",print_queue,instance_num,YELLOW)
@@ -832,7 +843,7 @@ def validate_feedback(inbound):
 
     return None
 
-def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,mutiny_args,print_queue,tmp_list,thread_num):
+def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag,mutiny_args,print_queue,tmp_list,thread_num):
     timeout = FUZZERTIMEOUT
     repeat_counter = 0
     crash_dir = os.path.join(fuzzer_dir,"crashes")
@@ -896,23 +907,20 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,mutiny_args,pr
     
     while True:
         try:
-            # check for .fuzzer files in queue from parent thread.
-            '''
+            # check for new fuzzers if using shared corpus.
             if fuzzer_queue.empty():    
-                output("[._.] Fuzzer queue empty, taking actions...","fuzzer",print_queue,YELLOW)
-                if append_lock.acquire(block=True,timeout=4):
-                    new_fuzzer_list = os.listdir(queue_dir)
-                    for f in new_fuzzer_list:
-                        fuzzer_queue.put(os.path.join(queue_dir,f)) 
-                        time.sleep(.01)
-                    append_lock.release()
-                repeat_counter = 0
-            '''
+                output("[._.] Fuzzer queue empty, taking actions...","fuzzer",print_queue,color=YELLOW)
+                append_lock.acquire()
+                new_fuzzer_list = os.listdir(queue_dir)
+                for f in filter(None,new_fuzzer_list):
+                    fuzzer_queue.put(os.path.join(queue_dir,f)) 
+                    time.sleep(.01)
+                append_lock.release()
 
             # did we get anything? no? then just repopulate and hit next set of seeds.
             if fuzzer_queue.empty():    
-                append_lock.acquire()
                 output("[._.] Starting on next set of seeds.","fuzzer",print_queue,color=YELLOW)
+                append_lock.acquire()
                 repeat_counter += 1
                 processed = os.listdir(processed_dir)
                 for f in processed:
@@ -920,18 +928,6 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,mutiny_args,pr
                     time.sleep(.01)
                 append_lock.release()
                     
-            '''
-            #
-            # if still empty, check controller for extra cases via network/http. 
-            if fuzzer_queue.empty():
-                tmp = get_controller_fuzzer() # Not implimented yet. 
-
-                if tmp:
-                    fuzzer_name,fuzzer_contents = tmp 
-                    fuzzer_name = os.path.join(fuzzer_dir,fuzzer_name)
-                    with open(fuzzer_name,"w") as f:
-                        f.write(fuzzer_contents)
-            '''
             if repeat_flag:
                 # repeat last fuzzer.
                 repeat_flag = False
@@ -953,23 +949,21 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,mutiny_args,pr
                     if "outbound fuzz" not in tmp and "more fuzz" not in tmp:
                         continue
 
-                           
-            
             amt_per_fuzzer = 10000
-
-            if "-r" in mutiny_args:
-                try:
-                    ind = mutiny_args.index("-r") 
-                    lowerbound,upperbound = [int(x) for x in  mutiny_args[ind+1].split("-")]
-                    amt_per_fuzzer = upperbound - lowerbound
-                except ValueError:
-                    pass
-                except:
-                    pass
-                
-            else:
-                lowerbound = (amt_per_fuzzer * repeat_counter) 
-                upperbound = (amt_per_fuzzer * (repeat_counter+1)) 
+            lowerbound = 0
+            upperbound=0
+            try:
+                ind = mutiny_args.index("-r") 
+                lowerbound,upperbound = [int(x) for x in mutiny_args[ind+1].split("-")]
+                amt_per_fuzzer = upperbound - lowerbound
+                mutiny_args.append("-r")
+                mutiny_args.append("%d-%d"%(lowerbound + (amt_per_fuzzer*repeat_counter),lowerbound+(amt_per_fuzzer*(repeat_counter+1))))
+                mutiny_args = mutiny_args[:ind] + mutiny_args[ind+2:]
+            except ValueError:
+                pass
+            
+            lowerbound = lowerbound + (amt_per_fuzzer * repeat_counter) 
+            upperbound = lowerbound + (amt_per_fuzzer * (repeat_counter+1)) 
 
             update_curr_fuzzer((fuzzer,lowerbound,upperbound),print_queue,thread_num)
 
@@ -999,16 +993,15 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,mutiny_args,pr
                                 args.append("-p")
                                 args.append(str(int(mutiny_args[ind+1])+(thread_num)))
                                 args += mutiny_args[:ind] + mutiny_args[ind+2:]
+                            except IndexError:
+                                args += mutiny_args[:ind] 
                             except:
                                 args += mutiny_args 
                         
                         else:
                             args += mutiny_args 
 
-                        if "-r" not in mutiny_args:
-                            args.append("-r")
-                            args.append("%d-%d"%(lowerbound,upperbound))
-
+                            
                         if "-t" not in mutiny_args and "--timeout" not in mutiny_args:
                             args.append("-t")
                             args.append(str(timeout)) 
@@ -1666,7 +1659,10 @@ def output_thread(inp_queue,fuzz_flag_list,kill_switch,instance_count=0):
                         m,thread = fuzzer_log_messages[(cur_log_len - log_count)]
 
                     if thread > 0:
-                        m = "T%d> %s"%(thread,m)
+                        try:
+                            m = "T%d> %s"%(thread,m)
+                        except:
+                            m = "T%s> %s"%(thread,m)
                      
                     if len(m) > width: 
                         m = m[:width-4] + "..."
