@@ -146,7 +146,8 @@ def main(logs):
                 continue
 
             with open(fname,"r") as f:
-                if "outbound fuzz" not in f.read():
+                data = f.read()
+                if "outbound fuzz" not in data and "more fuzz" not in data:
                     continue
             
             fuzzer_queue.put(fname)
@@ -337,7 +338,8 @@ def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
             "-r","%d-"%SKIP_TO,
             "-R","%d"%(amt_per_fuzzer/100),
             "-t",str(timeout), 
-            "-i",target_ip
+            "-i",target_ip,
+            "-F"
     ]
 
     fuzzy = get_mutiny_with_args(args)
@@ -397,7 +399,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                     "-R","%d"%(amt_per_fuzzer/100),
                     "-t",str(timeout), 
                     "-i",target_ip,
-                    "-f"
+                    "-F"
             ]
             
             if target_port:

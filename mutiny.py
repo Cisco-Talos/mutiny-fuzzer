@@ -505,6 +505,16 @@ class MutinyFuzzer():
                 if not self.args.emulate:
                     try:
                         self.sendPacket(connection, addr, byteArrayToSend)
+   
+                        try:
+                            self.messageProcessor.postSendProcess(self.monitor, self.fuzzerFilePath, seed, byteArrayToSend, host, fuzzerData.port)
+                        except AttributeError as e:
+                            if "'MessageProcessor' object has no attribute 'postSendProcess'" in e:
+                                # pass for old fuzzers that don't have this callback
+                                pass
+                            else:
+                                raise e
+
                     except Exception as e:
                         message.resetAlteredMessage()
 
