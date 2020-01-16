@@ -145,10 +145,14 @@ def main(logs):
             if os.path.isdir(fname):
                 continue
 
+            if fname.endswith("py") or fname.endswith("pyc"):
+                continue
+
             with open(fname,"r") as f:
                 data = f.read()
                 if "outbound fuzz" not in data and "more fuzz" not in data:
                     continue
+
             
             fuzzer_queue.put(fname)
             print "[>_>] adding %s" % fname
@@ -326,9 +330,6 @@ def crash_listener(crash_queue,done_switch,logger):
         if done_switch.is_set():
             break
 
-def get_controller_fuzzer():
-    #! TODO     
-    return None
 
 
 def launch_fuzzer(fuzzer,control_port,amt_per_fuzzer,timeout,done_switch):
@@ -366,17 +367,20 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,control_port,amt_per_fuzze
                 new_fuzzer_list = os.listdir(fuzzer_dir)
                 new_fuzzer_list.remove("processed_fuzzers") # 
                 for f in new_fuzzer_list:
-                    fuzzer_queue.put(os.path.join(fuzzer_dir,f)) 
+                    fname = os.path.join(fuzzer_dir,f)
+                    if os.path.isdir(fname):
+                        continue
+
+                    if fname.endswith("py") or fname.endswith("pyc"):
+                        continue
+
+                    with open(fname,"r") as f:
+                        data = f.read()
+                        if "outbound fuzz" not in data and "more fuzz" not in data:
+                            continue
+     
+                    fuzzer_queue.put(fname) 
                 append_lock.release()
-            
-        # if still empty, check controller 
-        if fuzzer_queue.empty():
-            tmp = get_controller_fuzzer() 
-            if tmp:
-                fuzzer_name,fuzzer_contents = tmp 
-                fuzzer_name = os.path.join(fuzzer_dir,fuzzer_name)
-                with open(fuzzer_name,"w") as f:
-                    f.write(fuzzer_contents)
             
         # if still empty, keep fuzzing with same fuzzer
         if not fuzzer_queue.empty():

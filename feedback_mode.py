@@ -200,8 +200,12 @@ def main(logs):
     if len(queue_list) > 0: # use queue_list instead.
         #output("Requeueue %s!"%(str(queue_list)),"fuzzer",print_queue)
         for f in queue_list:
-            if ".swp" in f:
+            if f.endswith(".swp") or f.endswith(".swo"):
                 continue 
+    
+            if f.endswith(".py") or f.endswith(".pyc"):
+                continue
+
             #output("%s"%f,"fuzzer",print_queue)
             queued_file = os.path.join(queue_dir,f)
             if os.path.isfile(queued_file):
@@ -215,6 +219,12 @@ def main(logs):
     
     for f in file_list:
         fuzzer_file = os.path.join(fuzzer_dir,f)
+        if f.endswith(".swp") or f.endswith(".swo"):
+            continue 
+
+        if f.endswith(".py") or f.endswith(".pyc"):
+            continue
+
         #if ".fuzzer" in f:
         if os.path.isfile(fuzzer_file):
             queued_file = os.path.join(fuzzer_dir,"queue",f)
@@ -941,7 +951,17 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
                 append_lock.acquire()
                 new_fuzzer_list = os.listdir(queue_dir)
                 for f in filter(None,new_fuzzer_list):
-                    fuzzer_queue.put(os.path.join(queue_dir,f)) 
+                    fname = os.path.join(queue_dir,f)
+                    if os.path.isdir(fname): 
+                        continue
+    
+                    if fname.endswith("py") or fname.endswith("pyc"):
+                        continue
+        
+                    if fname.endswith(".swp") or fname.endswith(".swo"):
+                        continue
+
+                    fuzzer_queue.put() 
                     time.sleep(.01)
                 append_lock.release()
 
