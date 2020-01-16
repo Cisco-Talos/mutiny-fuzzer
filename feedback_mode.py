@@ -669,7 +669,8 @@ def fuzz_target(logs,fc,cc,nc,fq,inbound_queue,print_queue,instance_num,kill_swi
                         continue 
 
                     else:
-                        output("Weird data on inbound_queue: %s" % msg,"fuzzer",print_queue)
+                        output("Data on inbound_queue: %s" % msg,"fuzzer",print_queue)
+
 
             except Queue.Empty:
                 pass
@@ -951,17 +952,20 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
                 append_lock.acquire()
                 new_fuzzer_list = os.listdir(queue_dir)
                 for f in filter(None,new_fuzzer_list):
+
+                    if f.startswith(".") or f.endswith(".swp") or f.endswith(".swo"):
+                        continue
+
+                    if f.endswith("py") or f.endswith("pyc"):
+                        continue
+
                     fname = os.path.join(queue_dir,f)
+
                     if os.path.isdir(fname): 
-                        continue
-    
-                    if fname.endswith("py") or fname.endswith("pyc"):
-                        continue
-        
-                    if fname.endswith(".swp") or fname.endswith(".swo"):
                         continue
 
                     fuzzer_queue.put(fname) 
+            
                     time.sleep(.01)
                 append_lock.release()
 
@@ -1004,7 +1008,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
                 amt_per_fuzzer = upperbound - lowerbound
                 try:
                     mutiny_args = mutiny_args[:ind] + mutiny_args[ind+2:]
-                except:
+                except IndexError:
                     mutiny_args = mutiny_args[:ind] 
             except ValueError:
                 
@@ -1013,8 +1017,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
 
             mutiny_args.append("-r")
             mutiny_args.append("%d-%d"%(lowerbound + (amt_per_fuzzer*repeat_counter),lowerbound+(amt_per_fuzzer*(repeat_counter+1))))
-           
-
+            
             update_curr_fuzzer((fuzzer,lowerbound,upperbound),print_queue,thread_num)
 
             try:
