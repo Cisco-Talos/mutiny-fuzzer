@@ -961,7 +961,7 @@ def launch_corpus(fuzzer_dir,append_lock,fuzzer_queue,kill_switch,fuzz_case_flag
                     if fname.endswith(".swp") or fname.endswith(".swo"):
                         continue
 
-                    fuzzer_queue.put() 
+                    fuzzer_queue.put(fname) 
                     time.sleep(.01)
                 append_lock.release()
 
