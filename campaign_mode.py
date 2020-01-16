@@ -55,15 +55,19 @@ HARNESS_IP = "0.0.0.0"
 HARNESS_PORT = 60000
 
 SOCKTIMEOUT = .01 
-CASES_PER_FUZZER = 40000
 
 logger = None
 
 process_respawn_time = 1
 
 
-if len(sys.argv) < 3:
+if len(sys.argv) < 3 or "-h" in sys.argv:
     print "[x.x] Usage: %s <fuzzer dir/file> <target_IP>" % sys.argv[0]
+    print "Extra options:"
+    print "--port => Which port to fuzz (overrides .fuzzers)"     
+    print "--seed => What seed to start from."     
+    print "--timeout => time to wait per fuzzer"
+    print "--cases => How many fuzz cases before rotating .fuzzer"
     sys.exit()
 
 fuzzer_dir = None
@@ -95,6 +99,11 @@ try:
 except Exception as e:
     pass
 
+CASES_PER_FUZZER = 40000
+try:   
+    CASES_PER_FUZZER = int(sys.argv[sys.argv.index("--cases")+1])
+except Exception as e:
+    pass
 
 #! Distributed fuzzing
 #! add flag for fuzzer file source (https get checks on queue)
