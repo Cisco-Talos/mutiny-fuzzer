@@ -182,6 +182,20 @@ class MutinyFuzzer():
                 self.output("[x.x] Invalid --crash %s, format=> \"<ip>:<port>\", crash listener disabled"%args.feedback,YELLOW) 
                 self.output(str(e))
 
+        if args.bindaddr:
+            # expect form like: "127.0.0.1:9999"
+            try:
+                self.bindaddr = tuple(args.bindaddr.split(":"))
+                if len(self.bindaddr) == 1:
+                    self.bindaddr = (self.bindaddr[0],0)
+                     
+            except:
+                self.output("[x.x] Invalid bindaddr %s, plz do something like <ip>:<port> k?"%args.bindaddr,YELLOW)
+                exit()
+        else:
+            #self.output("[x.x] no binder")
+            self.bindaddr = None
+            pass
                 
         ######## Processor Setup ################
         # The processor just acts as a container #
@@ -207,6 +221,12 @@ class MutinyFuzzer():
         ########## Launch child monitor thread
         #  
         self.lock_condition = args.lock
+        if "remote_tcp_open" in str(self.lock_condition) and self.fuzzerData.proto == "udp":
+            # by default it's remote_tcp_open, which doesn't really make sense
+            # when you're dealing with UDP. 
+            self.output("[>_>] Defaulting to 'always_unlocked' for udp, \n      if you want something smarter, pick something else",PURPLE)
+            self.lock_condition = "always_unlocked"
+    
         self.monitor = self.procDirector.getMonitor(self.host,\
                                                     self.fuzzerData.port,\
                                                     self.lock_condition)
@@ -215,7 +235,6 @@ class MutinyFuzzer():
         if len(args.logger):
             self.logger = Logger(args.logger)
             self.DUMPDIR = args.logger
-
             
         self.exceptionProcessor = self.procDirector.exceptionProcessor()
         self.messageProcessor = self.procDirector.messageProcessor()
@@ -322,14 +341,23 @@ class MutinyFuzzer():
                 #self.output("[*] Connecting to %s:%d"%addr)
                 connection.connect(addr)
             else:
-                self.output("[*] Binding to %s:%d"%addr,)
                 connection.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-                connection.bind(addr)
+
+                if self.bindaddr:
+                    #self.output("[*] Binding to %s:%d"%self.bindaddr,)
+                    connection.bind(self.bindaddr)
+                else:
+                    #self.output("[*] Binding to %s:%d"%addr,)
+                    connection.bind(addr)
+
                 connection.listen(5) # should there be more? Variable?  
-                
-                
+
         elif self.fuzzerData.proto == "udp":
             connection = socket.socket(self.socket_family,socket.SOCK_DGRAM)
+            if self.bindaddr:
+                #self.output("[*] Binding to %s:%d"%self.bindaddr,)
+                connection.bind(self.bindaddr)
+
         # PROTO = dictionary of assorted L3 proto => proto number
         # e.g. "icmp" => 1
         elif self.fuzzerData.proto in PROTO:
@@ -848,7 +876,7 @@ class MutinyFuzzer():
                         #self.output("Unable to generate harness logs dir...")
                         pass 
 
-                    crash_dump_file = os.path.join(os.getcwd(),"mutidumps.txt")
+                    crash_dump_file = os.path.join(os.getcwd(),"mutiny_crashlog.txt")
                      
                     if orig_timeout == -1:
                         orig_timeout = i+1
@@ -1104,7 +1132,8 @@ def get_mutiny_with_args(prog_args):
     parser.add_argument("-C","--campaign",help="Fuzzing Campaign mode, you probably don't wanna use this, refer to campaign.py for further details, arg==port",type=int)
     parser.add_argument("-k","--lock",help="Determines when to stop/start fuzzing. More info in mutiny_classes/monitor.py.",default="remote_tcp_open")
     parser.add_argument("-F", "--forceMsgProc", help="Use the default MSG Processor, not those found in fuzzers (good for campaign)",action="store_true")
-    parser.add_argument("-c","--crashes",help="<Ip:port> Bind to ip/port and listen for crashes from fuzzing harness")
+    parser.add_argument("-c","--crashes",help="<ip>:<port> Bind to ip/port and listen for crashes from fuzzing harness and dump info/output to 'mutiny_crashlog.txt'")
+    parser.add_argument("-b","--bindaddr",help="'<ip>:<port>' bind to a specific address, regardless of `target_host` (Uses: broadcast/multicast/idklol)")
     
 
     verbosity = parser.add_mutually_exclusive_group()

@@ -35,6 +35,7 @@
 # differentiation between CTRL+C and the target process
 # dying.  
 #------------------------------------------------------------------
+import sys
 import time
 import socket
 import subprocess
@@ -55,6 +56,13 @@ class Monitor(object):
         self.harness_port = -1
         self.targetIP = ""
         self.targetPort = 0
+        self.lock_dict = {
+            "remote_tcp_open": self.remote_tcp_open,
+            "local_process_listen":self.local_process_listen,
+            "always_unlocked":self.always_unlocked,
+            "ping_test": self.ping_test,
+        }
+
 
     # This function will run asynchronously in a different thread to monitor the host
     def monitorTarget(self, targetIP, targetPort, lock_condition):
@@ -74,7 +82,14 @@ class Monitor(object):
         # uncomment if you want monitoring, change testing_bin to whatever.
         while not len(ret_val):
             #ret_val = self.lockCondition("always_unlocked")
-            ret_val = self.lockCondition(self.lock_condition,self.targetIP,self.targetPort)
+            try:
+                ret_val = self.lockCondition(self.lock_condition,self.targetIP,self.targetPort)
+            except KeyError:
+                print("[x.x] Currently implimented lock conditions:")
+                for x in self.lock_dict:
+                    print("-- %s"%x)        
+                print("[^_^] If it's not in the above, feel free to code it yourself <3")
+                sys.exit()
             time.sleep(1) 
 
         return ret_val
@@ -83,14 +98,8 @@ class Monitor(object):
     # a given lockCondition should return a value on unlock and "" or None on still locked.
     def lockCondition(self,condition,*args): 
         #print("Condition: %s, args: %s"%(condition,args))
-        lock_dict = {
-                    "remote_tcp_open": self.remote_tcp_open,
-                    "local_process_listen":self.local_process_listen,
-                    "always_unlocked":self.always_unlocked,
-                    "ping_test": self.ping_test,
-                    }
-
-        return lock_dict[condition](args) 
+        
+        return self.lock_dict[condition](args) 
 
     # OS: Any            
     # This conditional will unlock when it finds the requested port to be open for the 
