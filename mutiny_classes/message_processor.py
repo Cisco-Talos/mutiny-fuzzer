@@ -41,7 +41,7 @@
 
 import errno
 import socket
-import thread
+import _thread
 from mutiny_classes.mutiny_exceptions import *
 
 # This class is used to provide extra parameters beyond only the message

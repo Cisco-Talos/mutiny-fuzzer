@@ -22,7 +22,7 @@
 
 import errno
 import socket
-import thread
+import _thread
 from mutiny_classes.mutiny_exceptions import *
 
 # This class is used to provide extra parameters beyond only the message
@@ -107,5 +107,5 @@ class MessageProcessor(object):
     def postReceiveProcess(self, message, extraParams):
         self.postReceiveStore[int(extraParams.messageNumber)] = message
         if extraParams.messageNumber == 3:
-            print("Server's echo response: {0}".format(message))
+            print(("Server's echo response: {0}".format(message)))
             

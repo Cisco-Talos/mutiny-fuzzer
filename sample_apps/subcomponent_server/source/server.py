@@ -16,42 +16,42 @@ s.listen(1)
 
 def sigint_handler(signal, frame):
     # Quit on ctrl-c
-    print "\nSIGINT received, stopping\n"
+    print("\nSIGINT received, stopping\n")
     s.close()
     sys.exit(0)
 signal.signal(signal.SIGINT, sigint_handler)
 
 while 1:
     connection, address = s.accept()
-    print "\nNew client from %s:%d" % (address[0], address[1])
+    print("\nNew client from %s:%d" % (address[0], address[1]))
     state = STATES[0]
     try:
         while  state != STATES[2]:
             data = connection.recv(BUFFERSIZE).rstrip()
             if not data:
                 break
-            print "Received: %s" % (data)
+            print("Received: %s" % (data))
             
             if state == STATES[0]:
                 if data == STATE_COMMANDS[0]:
-                    print "Transitioning from %s to %s" % (STATES[0], STATES[1])
+                    print("Transitioning from %s to %s" % (STATES[0], STATES[1]))
                     state = STATES[1]
                     connection.send("OK\n")
                     continue
             elif state == STATES[1]:
                 if data[:4] == STATE_COMMANDS[1]:
                     echoData = data[5:]
-                    print "Echoing %s back to user" % (echoData)
+                    print("Echoing %s back to user" % (echoData))
                     connection.send("%s\n" % (echoData))
                 elif data == STATE_COMMANDS[2]:
-                    print "Transitioning from %s to %s" % (STATES[1], STATES[2])
+                    print("Transitioning from %s to %s" % (STATES[1], STATES[2]))
                     state = STATES[2]
                     connection.send("OK\n")
                     continue
             # Should have done something by now on a valid command
-            print "Invalid command '%s' for state '%s'" % (data, state)
+            print("Invalid command '%s' for state '%s'" % (data, state))
             connection.send("INVALID\n")
     except socket.error as e:
-        print "Socket error %s, lost client" % (str(e))
+        print("Socket error %s, lost client" % (str(e)))
                 
     connection.close()

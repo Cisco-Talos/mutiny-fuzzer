@@ -177,18 +177,18 @@ class FuzzerData(object):
                         if messageNum in self.messagesToFuzz:
                             message.isFuzzed = True
                         if not quiet:
-                            print "\tMessage #{0}: {1} bytes {2}".format(messageNum, len(message.getOriginalMessage()), message.direction)
+                            print("\tMessage #{0}: {1} bytes {2}".format(messageNum, len(message.getOriginalMessage()), message.direction))
                         self._pushComments("message{0}".format(messageNum))
                         messageNum += 1
                         lastMessage = message
                     # "sub" means this is a subcomponent
                     elif args[0] == "sub":
                         if not 'message' in locals():
-                            print "\tERROR: 'sub' line declared before any 'message' lines, throwing subcomponent out: {0}".format(line)
+                            print("\tERROR: 'sub' line declared before any 'message' lines, throwing subcomponent out: {0}".format(line))
                         else:
                             message.appendFromSerialized(line)
                             if not quiet:
-                                print "\t\tSubcomponent: {1} additional bytes".format(messageNum, len(message.subcomponents[-1].message))
+                                print("\t\tSubcomponent: {1} additional bytes".format(messageNum, len(message.subcomponents[-1].message)))
                     elif line.lstrip()[0] == "'" and 'message' in locals():
                         # If the line begins with ' and a message line has been found,
                         # assume that this is additional message data
@@ -197,14 +197,14 @@ class FuzzerData(object):
                         message.appendFromSerialized(line.lstrip(), createNewSubcomponent=False)
                     else:
                         if not quiet:
-                            print "Unknown setting in .fuzzer file: {0}".format(args[0])
+                            print("Unknown setting in .fuzzer file: {0}".format(args[0]))
                     # Slap any messages between "message" and "sub", etc (ascii same way) above message
                     # It's way too annoying to print these out properly, as they get
                     # automagically outserialized by the Message object
                     # Plus they may change... eh, forget it, user can fix up themselves if they want
                     self._appendComments("message{0}".format(messageNum-1))
                 except Exception as e:
-                    print "Invalid line: {0}".format(line)
+                    print("Invalid line: {0}".format(line))
                     raise e
         # Catch any comments below the last line
         self._pushComments("endcomments")
@@ -233,7 +233,7 @@ class FuzzerData(object):
             # print "File %s already exists" % (filePath,)
         
         if origFilePath != filePath:
-            print("File {0} already exists, using {1} instead".format(origFilePath, filePath))
+            print(("File {0} already exists, using {1} instead".format(origFilePath, filePath)))
 
         with open(filePath, 'w') as outputFile:
             self.writeToFD(outputFile, defaultComments=defaultComments, finalMessageNum=finalMessageNum)

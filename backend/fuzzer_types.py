@@ -76,22 +76,22 @@ class Message(object):
         self.subcomponents = []
 
     def getOriginalSubcomponents(self):
-        return map(lambda subcomponent: subcomponent.message, self.subcomponents)
+        return [subcomponent.message for subcomponent in self.subcomponents]
     
     # May or may not have actually been changed
     # Version of subcomponents that includes fuzzing and messageprocessor changes from user
     # Is transient and reverted to original every iteration
     def getAlteredSubcomponents(self):
-        return map(lambda subcomponent: subcomponent.getAlteredByteArray(), self.subcomponents)
+        return [subcomponent.getAlteredByteArray() for subcomponent in self.subcomponents]
     
     def getOriginalMessage(self):
-        return bytearray().join(map(lambda subcomponent: subcomponent.message, self.subcomponents))
+        return bytearray().join([subcomponent.message for subcomponent in self.subcomponents])
     
     # May or may not have actually been changed
     # Version of message that includes fuzzing and messageprocessor changes from user
     # Is transient and reverted to original every iteration
     def getAlteredMessage(self):
-        return bytearray().join(map(lambda subcomponent: subcomponent.getAlteredByteArray(), self.subcomponents))
+        return bytearray().join([subcomponent.getAlteredByteArray() for subcomponent in self.subcomponents])
     
     def resetAlteredMessage(self):
         for subcomponent in self.subcomponents:
@@ -104,7 +104,7 @@ class Message(object):
     #   flag isFuzzed set
     def setMessageFrom(self, sourceType, message, isFuzzed):
         if sourceType == self.Format.CommaSeparatedHex:
-            message = bytearray(map(lambda x: x.decode("hex"), message.split(",")))
+            message = bytearray([x.decode("hex") for x in message.split(",")])
         elif sourceType == self.Format.Ascii:
             message = self.deserializeByteArray(message)
         elif sourceType == self.Format.Raw:
@@ -123,7 +123,7 @@ class Message(object):
     #   instead, append new message data to last subcomponent in message
     def appendMessageFrom(self, sourceType, message, isFuzzed, createNewSubcomponent=True):
         if sourceType == self.Format.CommaSeparatedHex:
-            newMessage = bytearray(map(lambda x: x.decode("hex"), message.split(",")))
+            newMessage = bytearray([x.decode("hex") for x in message.split(",")])
         elif sourceType == self.Format.Ascii:
             newMessage = self.deserializeByteArray(message)
         elif sourceType == self.Format.Raw:
@@ -154,7 +154,7 @@ class Message(object):
     @classmethod
     def deserializeByteArray(cls, string):
         # This appears to properly reverse repr() without the risks of eval
-        return bytearray(string[1:-1].decode('string_escape'))
+        return bytearray(string[1:-1].encode('utf8').decode('unicode-escape').encode('utf8'))
     
     def getAlteredSerialized(self):
         if len(self.subcomponents) < 1:
@@ -293,13 +293,13 @@ class Logger(object):
     def __init__(self, folderPath):
         self._folderPath = folderPath
         if os.path.exists(folderPath):
-            print "Data output directory already exists: %s" % (folderPath)
+            print("Data output directory already exists: %s" % (folderPath))
             exit()
         else:
             try:
                 os.makedirs(folderPath)
             except:
-                print "Unable to create logging directory: %s" % (folderPath)
+                print("Unable to create logging directory: %s" % (folderPath))
                 exit()
 
         self.resetForNewRun()
@@ -322,7 +322,7 @@ class Logger(object):
 
     def _outputLog(self, runNumber, messageCollection, errorMessage, receivedMessageData, highestMessageNumber):
         with open(os.path.join(self._folderPath, str(runNumber)), "w") as outputFile:
-            print "Logging run number %d" % (runNumber)
+            print("Logging run number %d" % (runNumber))
             outputFile.write("Log from run with seed %d\n" % (runNumber))
             outputFile.write("Error message: %s\n" % (errorMessage))
 
@@ -338,7 +338,7 @@ class Logger(object):
                 if message.isFuzzed:
                     outputFile.write("Fuzzed Packet %d: %s\n" % (i, message.getAlteredSerialized()))
                 
-                if receivedMessageData.has_key(i):
+                if i in receivedMessageData:
                     # Compare what was actually sent to what we expected, log if they differ
                     if receivedMessageData[i] != message.getOriginalMessage():
                         outputFile.write("Actual data received for packet %d: %s" % (i, Message.serializeByteArray(receivedMessageData[i])))

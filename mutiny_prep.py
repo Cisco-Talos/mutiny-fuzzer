@@ -58,7 +58,7 @@ fuzzerData.processorDirectory = args.processor_dir[0]
 
 ############# Process input files
 if not os.path.isfile(inputFilePath):
-    print "Cannot read input %s" % (inputFilePath)
+    print("Cannot read input %s" % (inputFilePath))
     exit()
 
 STATE_BETWEEN_MESSAGES = 0
@@ -80,7 +80,7 @@ with open(inputFilePath, 'r') as inputFile:
     isCombiningPackets = False
     lastMessageDirection = -1
 
-    print "Processing %s..." % (inputFilePath)
+    print("Processing %s..." % (inputFilePath))
     
     try:
         # Process as Pcap preferentially
@@ -103,7 +103,7 @@ with open(inputFilePath, 'r') as inputFile:
                     # IF port1 == port2, then it can't be the same ip/MAC, so go based on that
                     useMacs = False
                     if port1 == port2:
-                        print "Source and destination ports are the same, using MAC addresses to differentiate server and client."
+                        print("Source and destination ports are the same, using MAC addresses to differentiate server and client.")
                         useMacs = True
                         mac1 = data[i].src
                         mac2 = data[i].dst
@@ -122,9 +122,9 @@ with open(inputFilePath, 'r') as inputFile:
                         clientMac = mac1 if serverMac == mac2 else mac2
                     defaultPort = serverPort
                 elif data[i].sport not in [clientPort, serverPort]:
-                    print "Error: unknown source port %d - is the capture filtered to a single stream?" % (data[i].sport)
+                    print("Error: unknown source port %d - is the capture filtered to a single stream?" % (data[i].sport))
                 elif data[i].dport not in [clientPort, serverPort]:
-                    print "Error: unknown destination port %d - is the capture filtered to a single stream?" % (data[i].dport)
+                    print("Error: unknown destination port %d - is the capture filtered to a single stream?" % (data[i].dport))
                 
                 if not useMacs:
                     newMessageDirection = Message.Direction.Outbound if data[i].sport == clientPort else Message.Direction.Inbound
@@ -150,7 +150,7 @@ with open(inputFilePath, 'r') as inputFile:
                         askedToCombinePackets = True
                     if isCombiningPackets:
                         message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
-                        print "\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction)
+                        print("\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction))
                         continue
                 # Either direction isn't the same or we're not combining packets
                 message = Message()
@@ -159,13 +159,13 @@ with open(inputFilePath, 'r') as inputFile:
                 message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
                 fuzzerData.messageCollection.addMessage(message)
                 j += 1
-                print "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction)
+                print("\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction))
             except AttributeError:
                 # No payload, keep going (different from empty payload)
                 continue
     except Exception as rdpcap_e:
-        print str(rdpcap_e)
-        print "Processing as c_array..."
+        print(str(rdpcap_e))
+        print("Processing as c_array...")
         try:
             # Process c_arrays
             # This is processing the wireshark syntax looking like:
@@ -232,25 +232,25 @@ with open(inputFilePath, 'r') as inputFile:
                         if state == STATE_READING_MESSAGE:
                             message.setMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), False)
                             fuzzerData.messageCollection.addMessage(message)
-                            print "\tMessage #%d - Processed %d bytes %s" % (i, len(messageArray), message.direction)
+                            print("\tMessage #%d - Processed %d bytes %s" % (i, len(messageArray), message.direction))
                         elif state == STATE_COMBINING_PACKETS:
                             # Append new data to last message
                             i -= 1
                             message.appendMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), False, createNewSubcomponent=False)
-                            print "\tMessage #%d - Added %d new bytes %s" % (i, len(messageArray), message.direction)
+                            print("\tMessage #%d - Added %d new bytes %s" % (i, len(messageArray), message.direction))
                         if args.dump_ascii:
-                            print "\tAscii: %s" % (str(message.getOriginalMessage()))
+                            print("\tAscii: %s" % (str(message.getOriginalMessage())))
                         i += 1
                         state = STATE_BETWEEN_MESSAGES
                         lastMessageDirection = message.direction
         except Exception as e:
-            print "Unable to parse as pcap: %s" % (str(rdpcap_e))
-            print "Unable to parse as c_arrays: %s" % (str(e))
+            print("Unable to parse as pcap: %s" % (str(rdpcap_e)))
+            print("Unable to parse as c_arrays: %s" % (str(e)))
 
 if len(fuzzerData.messageCollection.messages) == 0:
-    print "\nCouldn't process input file - are you sure you gave a file containing a tcpdump pcap or wireshark c_arrays?"
+    print("\nCouldn't process input file - are you sure you gave a file containing a tcpdump pcap or wireshark c_arrays?")
     exit()
-print "Processed input file %s" % (inputFilePath)
+print("Processed input file %s" % (inputFilePath))
 
 ############# Get fuzzing details 
 # Ask how many times we should repeat a failed test, as in one causing a crash
@@ -328,9 +328,9 @@ def promptAndOutput(outputMessageNum, autogenerateAllClient=False):
 
     outputFilePath = "{0}-{1}.fuzzer".format(os.path.splitext(inputFilePath)[0], outputFilenameEnd)
     actualPath = fuzzerData.writeToFile(outputFilePath, defaultComments=True, finalMessageNum=finalMessageNum)
-    print GREEN
-    print "Wrote .fuzzer file: {0}".format(actualPath)
-    print CLEAR
+    print(GREEN)
+    print("Wrote .fuzzer file: {0}".format(actualPath))
+    print(CLEAR)
     
     if autogenerateAllClient:
         nextMessage = getNextMessage(outputMessageNum+1, Message.Direction.Outbound)
@@ -354,4 +354,4 @@ else:
         while prompt("\nDo you want to generate a .fuzzer for another message number?", defaultIndex=1):
             outputMessageNum = promptAndOutput(outputMessageNum)
 
-print "All files have been written."
+print("All files have been written.")

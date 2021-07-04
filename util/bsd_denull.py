@@ -10,14 +10,14 @@ L3type = "\x08\x00"
 headerlen = "\x45"
 
 def usage():
-    print "Usage: ./%s <pcapfile>" % sys.argv[0]    
+    print("Usage: ./%s <pcapfile>" % sys.argv[0])    
     exit()
 
 def main():
     nulls = sys.argv[1]   
     denulled = PacketList()
     
-    print "Denulling pcap: %s" % nulls
+    print("Denulling pcap: %s" % nulls)
     try:
         nulled = rdpcap(nulls)
     except:
@@ -25,7 +25,7 @@ def main():
     
     for packet in nulled:
         denulled.append(Ether(srcMac + dstMac + L3type)/TCP(str(packet)[4:])) 
-    print denulled
+    print(denulled)
     
     wrpcap("denulled_%s" % sys.argv[1], denulled)
 

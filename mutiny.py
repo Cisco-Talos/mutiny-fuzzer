@@ -79,10 +79,10 @@ def sendPacket(connection, addr, outPacketData):
     else:
         connection.sendto(outPacketData,addr)
 
-    print "\tSent %d byte packet" % (len(outPacketData))
+    print("\tSent %d byte packet" % (len(outPacketData)))
     if DEBUG_MODE:
-        print "\tSent: %s" % (outPacketData)
-        print "\tRaw Bytes: %s" % (Message.serializeByteArray(outPacketData))
+        print("\tSent: %s" % (outPacketData))
+        print("\tRaw Bytes: %s" % (Message.serializeByteArray(outPacketData)))
 
 
 def receivePacket(connection, addr, bytesToRead):
@@ -108,9 +108,9 @@ def receivePacket(connection, addr, bytesToRead):
             response += bytearray(connection.recv(readBufSize))
             i += readBufSize
             
-    print "\tReceived %d bytes" % (len(response))
+    print("\tReceived %d bytes" % (len(response)))
     if DEBUG_MODE:
-        print "\tReceived: %s" % (response)
+        print("\tReceived: %s" % (response))
     return response
 
 # Perform a fuzz run.  
@@ -178,8 +178,8 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
         try:
             connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[fuzzerData.proto]) 
         except Exception as e:
-            print e
-            print "Unable to create raw socket, please verify that you have sudo access"
+            print(e)
+            print("Unable to create raw socket, please verify that you have sudo access")
             sys.exit(0)
     elif fuzzerData.proto == "L2raw":
         connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
@@ -190,8 +190,8 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
             connection = socket.socket(socket_family,socket.SOCK_RAW,int(fuzzerData.proto)) 
             connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
         except Exception as e:
-            print e
-            print "Unable to create raw socket, please verify that you have sudo access"
+            print(e)
+            print("Unable to create raw socket, please verify that you have sudo access")
             sys.exit(0)
         
     if fuzzerData.proto == "tcp" or fuzzerData.proto == "udp" or fuzzerData.proto == "tls":
@@ -223,7 +223,7 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
             doesMessageHaveSubcomponents = len(message.subcomponents) > 1
 
             # Get original subcomponents for outbound callback only once
-            originalSubcomponents = map(lambda subcomponent: subcomponent.getOriginalByteArray(), message.subcomponents)
+            originalSubcomponents = [subcomponent.getOriginalByteArray() for subcomponent in message.subcomponents]
             
             if doesMessageHaveSubcomponents:
                 # For message with subcomponents, call prefuzz on fuzzed subcomponents
@@ -232,12 +232,12 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
                     # Note: we WANT to fetch subcomponents every time on purpose
                     # This way, if user alters subcomponent[0], it's reflected when
                     # we call the function for subcomponent[1], etc
-                    actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
+                    actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
                     prefuzz = messageProcessor.preFuzzSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, originalSubcomponents, actualSubcomponents))
                     subcomponent.setAlteredByteArray(prefuzz)
             else:
                 # If no subcomponents, call prefuzz on ENTIRE message
-                actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
+                actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
                 prefuzz = messageProcessor.preFuzzProcess(actualSubcomponents[0], MessageProcessorExtraParams(i, -1, message.isFuzzed, originalSubcomponents, actualSubcomponents))
                 message.subcomponents[0].setAlteredByteArray(prefuzz)
 
@@ -259,12 +259,12 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
                     subcomponent = message.subcomponents[j] 
                     # See preFuzz above - we ALWAYS regather this to catch any updates between
                     # callbacks from the user
-                    actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
+                    actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
                     presend = messageProcessor.preSendSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, originalSubcomponents, actualSubcomponents))
                     subcomponent.setAlteredByteArray(presend)
             
             # Always let the user make any final modifications pre-send, fuzzed or not
-            actualSubcomponents = map(lambda subcomponent: subcomponent.getAlteredByteArray(), message.subcomponents)
+            actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
             byteArrayToSend = messageProcessor.preSendProcess(message.getAlteredMessage(), MessageProcessorExtraParams(i, -1, message.isFuzzed, originalSubcomponents, actualSubcomponents))
 
             if args.dumpraw:
@@ -280,7 +280,7 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
             messageByteArray = message.getAlteredMessage()
             data = receivePacket(connection,addr,len(messageByteArray))
             if data == messageByteArray:
-                print "\tReceived expected response"
+                print("\tReceived expected response")
             if logger != None:
                 logger.setReceivedMessageData(i, data)
         
@@ -374,7 +374,7 @@ monitor = None
 optionDict = {"unfuzzedBytes":{}, "message":[]}
 
 fuzzerData = FuzzerData()
-print "Reading in fuzzer data from %s..." % (fuzzerFilePath)
+print("Reading in fuzzer data from %s..." % (fuzzerFilePath))
 fuzzerData.readFromFile(fuzzerFilePath)
 
 ######## Processor Setup ################
@@ -407,7 +407,7 @@ monitor = procDirector.startMonitor(host,fuzzerData.port)
 logger = None 
 
 if not isReproduce:
-    print "Logging to %s" % (outputDataFolderPath)
+    print("Logging to %s" % (outputDataFolderPath))
     logger = Logger(outputDataFolderPath)
 
 if args.dumpraw:
@@ -418,7 +418,7 @@ if args.dumpraw:
         try:
             os.mkdir("dumpraw")
         except:
-            print "Unable to create dumpraw dir"
+            print("Unable to create dumpraw dir")
             pass
     
 
@@ -432,7 +432,7 @@ def sigint_handler(signal, frame):
     if not monitor.crashEvent.isSet():
         # No event = quit
         # Quit on ctrl-c
-        print "\nSIGINT received, stopping\n"
+        print("\nSIGINT received, stopping\n")
         sys.exit(0)
 
 signal.signal(signal.SIGINT, sigint_handler)
@@ -445,22 +445,22 @@ loop_len = len(SEED_LOOP) # if --loop
 while True:
     lastMessageCollection = deepcopy(fuzzerData.messageCollection)
     wasCrashDetected = False
-    print "\n** Sleeping for %.3f seconds **" % args.sleeptime
+    print("\n** Sleeping for %.3f seconds **" % args.sleeptime)
     time.sleep(args.sleeptime)
     
     try:
         try:
             if args.dumpraw:
-                print "\n\nPerforming single raw dump case: %d" % args.dumpraw
+                print("\n\nPerforming single raw dump case: %d" % args.dumpraw)
                 performRun(fuzzerData, host, logger, messageProcessor, seed=args.dumpraw)  
             elif i == MIN_RUN_NUMBER-1:
-                print "\n\nPerforming test run without fuzzing..."
+                print("\n\nPerforming test run without fuzzing...")
                 performRun(fuzzerData, host, logger, messageProcessor, seed=-1) 
             elif loop_len: 
-                print "\n\nFuzzing with seed %d" % (SEED_LOOP[i%loop_len])
+                print("\n\nFuzzing with seed %d" % (SEED_LOOP[i%loop_len]))
                 performRun(fuzzerData, host, logger, messageProcessor, seed=SEED_LOOP[i%loop_len]) 
             else:
-                print "\n\nFuzzing with seed %d" % (i)
+                print("\n\nFuzzing with seed %d" % (i))
                 performRun(fuzzerData, host, logger, messageProcessor, seed=i) 
             #if --quiet, (logger==None) => AttributeError
             if logAll:
@@ -471,7 +471,7 @@ while True:
                  
         except Exception as e:
             if monitor.crashEvent.isSet():
-                print "Crash event detected"
+                print("Crash event detected")
                 try:
                     logger.outputLog(i, fuzzerData.messageCollection, "Crash event detected")
                     #exit()
@@ -492,12 +492,12 @@ while True:
             else:
                 exceptionProcessor.processException(e)
                 # Will not get here if processException raises another exception
-                print "Exception ignored: %s" % (str(e))
+                print("Exception ignored: %s" % (str(e)))
         
     except LogCrashException as e:
         if failureCount == 0:
             try:
-                print "MessageProcessor detected a crash"
+                print("MessageProcessor detected a crash")
                 logger.outputLog(i, fuzzerData.messageCollection, str(e))
             except AttributeError:  
                 pass   
@@ -514,49 +514,49 @@ while True:
     except AbortCurrentRunException as e:
         # Give up on the run early, but continue to the next test
         # This means the run didn't produce anything meaningful according to the processor
-        print "Run aborted: %s" % (str(e))
+        print("Run aborted: %s" % (str(e)))
     
     except RetryCurrentRunException as e:
         # Same as AbortCurrentRun but retry the current test rather than skipping to next
-        print "Retrying current run: %s" % (str(e))
+        print("Retrying current run: %s" % (str(e)))
         # Slightly sketchy - a continue *should* just go to the top of the while without changing i
         continue
         
     except LogAndHaltException as e:
         if logger:
             logger.outputLog(i, fuzzerData.messageCollection, str(e))
-            print "Received LogAndHaltException, logging and halting"
+            print("Received LogAndHaltException, logging and halting")
         else:
-            print "Received LogAndHaltException, halting but not logging (quiet mode)"
+            print("Received LogAndHaltException, halting but not logging (quiet mode)")
         exit()
         
     except LogLastAndHaltException as e:
         if logger:
             if i > MIN_RUN_NUMBER:
-                print "Received LogLastAndHaltException, logging last run and halting"
+                print("Received LogLastAndHaltException, logging last run and halting")
                 if MIN_RUN_NUMBER == MAX_RUN_NUMBER:
                     #in case only 1 case is run
                     logger.outputLastLog(i, lastMessageCollection, str(e))
-                    print "Logged case %d" % i
+                    print("Logged case %d" % i)
                 else:
                     logger.outputLastLog(i-1, lastMessageCollection, str(e))
             else:
-                print "Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting"
+                print("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
         else:
-            print "Received LogLastAndHaltException, halting but not logging (quiet mode)"
+            print("Received LogLastAndHaltException, halting but not logging (quiet mode)")
         exit()
 
     except HaltException as e:
-        print "Received HaltException halting"
+        print("Received HaltException halting")
         exit()
 
     if wasCrashDetected:
         if failureCount < fuzzerData.failureThreshold:
-            print "Failure %d of %d allowed for seed %d" % (failureCount, fuzzerData.failureThreshold, i)
-            print "The test run didn't complete, continuing after %d seconds..." % (fuzzerData.failureTimeout)
+            print("Failure %d of %d allowed for seed %d" % (failureCount, fuzzerData.failureThreshold, i))
+            print("The test run didn't complete, continuing after %d seconds..." % (fuzzerData.failureTimeout))
             time.sleep(fuzzerData.failureTimeout)
         else:
-            print "Failed %d times, moving to next test." % (failureCount)
+            print("Failed %d times, moving to next test." % (failureCount))
             failureCount = 0
             i += 1
     else:

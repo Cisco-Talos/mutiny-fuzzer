@@ -14,9 +14,9 @@ try:
     cli = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     cli.connect((ip,port))   
 except:
-    print "Could not connect to %s, %d, exiting!" % (ip,port)
+    print("Could not connect to %s, %d, exiting!" % (ip,port))
     sys.exit(0)
 
 cli.send(msg)
-print cli.recv(4096)
+print(cli.recv(4096))
 

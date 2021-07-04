@@ -39,13 +39,13 @@
 def prompt(question, answers=["y", "n"], defaultIndex=None):
     answer = ""
     while answer not in answers:
-        print "%s (%s)" % (question, "/".join(answers))
+        print("%s (%s)" % (question, "/".join(answers)))
         if defaultIndex != None:
-            answer = raw_input("Default %s: " % (answers[defaultIndex]))
+            answer = input("Default %s: " % (answers[defaultIndex]))
         else:
-            answer = raw_input("No default: ")
+            answer = input("No default: ")
         # Pretty up responses with a newline after
-        print ""
+        print("")
 
         if defaultIndex != None and answer == "":
             answer = answers[defaultIndex]
@@ -65,14 +65,14 @@ def promptInt(question, defaultResponse=None, allowNo=False):
     answer = None
 
     while answer == None:
-        print "%s" % (question)
+        print("%s" % (question))
         try:
             if defaultResponse:
-                answer = raw_input("Default {0}: ".format(defaultResponse)).strip()
+                answer = input("Default {0}: ".format(defaultResponse)).strip()
             else:
-                answer = raw_input("No default: ")
+                answer = input("No default: ")
             # Pretty up responses with a newline after
-            print ""
+            print("")
             
             if allowNo and (answer == "n" or answer == ""):
                 return None
@@ -94,12 +94,12 @@ def promptString(question, defaultResponse="n", validateFunc=None):
     retStr = ""
     while not retStr or not len(retStr): 
         if defaultResponse:
-            inputStr = raw_input("%s\nDefault %s: " % (question, defaultResponse))
+            inputStr = input("%s\nDefault %s: " % (question, defaultResponse))
         else:
-            inputStr = raw_input("%s\nNo default: " % (question))
+            inputStr = input("%s\nNo default: " % (question))
             
         # Pretty up responses with a newline after
-        print ""
+        print("")
         if defaultResponse and (inputStr == defaultResponse or not len(inputStr)):
             return defaultResponse    
         # If we're looking for a specific format, validate
@@ -121,7 +121,7 @@ def promptString(question, defaultResponse="n", validateFunc=None):
 # If given an invalid number string, returns None
 def validateNumberRange(inputStr, flattenList=False):
     retList = []
-    tmpList = filter(None,inputStr.split(','))
+    tmpList = [_f for _f in inputStr.split(',') if _f]
 
     # Print msg if invalid chars/typo detected
     for num in tmpList:
@@ -132,20 +132,20 @@ def validateNumberRange(inputStr, flattenList=False):
                 intRange = num.split('-')                  
                 # Invalid x-y-z
                 if len(intRange) > 2:
-                    print "Invalid range given"
+                    print("Invalid range given")
                     return None
                 try:
                     if not flattenList:
                         # Append iterator with bounds = intRange
-                        retList.append(xrange(int(intRange[0]),int(intRange[1])+1)) 
+                        retList.append(range(int(intRange[0]),int(intRange[1])+1)) 
                     else:
                         # Append individual elements
-                        retList.extend(range(int(intRange[0]),int(intRange[1])+1)) 
+                        retList.extend(list(range(int(intRange[0]),int(intRange[1])+1))) 
                 except TypeError:
-                    print "Invalid range given"
+                    print("Invalid range given")
                     return None
             else:
-                print "Invalid number given"
+                print("Invalid number given")
                 return None
     # All elements in the range are valid integers or integer ranges
     if flattenList:
