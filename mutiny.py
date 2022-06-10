@@ -58,7 +58,7 @@ from backend.fuzzerdata import FuzzerData
 from backend.menu_functions import validateNumberRange
 
 # Path to Radamsa binary
-RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa-v0.6/bin/radamsa") )
+RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa-0.6/bin/radamsa") )
 # Whether to print debug info
 DEBUG_MODE=False
 # Test number to start from, 0 default
