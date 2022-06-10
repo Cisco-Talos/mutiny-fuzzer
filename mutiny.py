@@ -121,9 +121,9 @@ def performRun(fuzzerData, host, logger, messageProcessor, seed=-1):
     if logger != None:
         logger.resetForNewRun()
     
-    # We don't perform DNS resolution, but always automatically type "localhost"
-    # ... really need to go ahead and add DNS resolution soon
-    if host == "localhost":
+    addrs = socket.getaddrinfo(host,fuzzerData.port)
+    host = addrs[0][4][0]
+    if host == "::1":
         host = "127.0.0.1"
     
     # cheap testing for ipv6/ipv4/unix
