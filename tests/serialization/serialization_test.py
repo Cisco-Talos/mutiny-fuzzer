@@ -35,37 +35,37 @@ def printResult(message, isPass):
         resultStr = "Fail"
         resultColor = Color.RED
     
-    print("\n{}: {}{}{}\n".format(message, resultColor, resultStr, Color.END))
+    print(("\n{}: {}{}{}\n".format(message, resultColor, resultStr, Color.END)))
     
 
 def testString(inputValue):
     # Test the serialization function itself
     try:
-        print("\n{}Testing direct serialization and deserialization...{}".format(Color.BOLD, Color.END))
+        print(("\n{}Testing direct serialization and deserialization...{}".format(Color.BOLD, Color.END)))
         serialized = Message.serializeByteArray(inputValue)
         deserialized = Message.deserializeByteArray(serialized)
-        print("\tSerialized: {0}".format(serialized))
-        print("\tBefore: {0}".format(str(inputValue)))
-        print("\t After: {0}".format(str(deserialized)))
+        print(("\tSerialized: {0}".format(serialized)))
+        print(("\tBefore: {0}".format(str(inputValue))))
+        print(("\t After: {0}".format(str(deserialized))))
     except Exception as e:
-        print("Caught exception running test: {}".format(str(e)))
+        print(("Caught exception running test: {}".format(str(e))))
         deserialized = ""
     printResult("Direct Serialization Test", inputValue == deserialized)
 
     # Also go a step further and test the inbound/outbound etc parsing
     try:
-        print("\n{}Testing full serialization with inbound/outbound lines...{}".format(Color.BOLD, Color.END))
+        print(("\n{}Testing full serialization with inbound/outbound lines...{}".format(Color.BOLD, Color.END)))
         message = Message()
         message.direction = Message.Direction.Outbound
         message.setMessageFrom(Message.Format.Raw, bytearray(inputValue), False)
         serialized = message.getSerialized()
         message.setFromSerialized(serialized)
         deserialized = message.getOriginalMessage()
-        print("\tSerialized: {0}".format(serialized))
-        print("\tBefore: {0}".format(str(inputValue)))
-        print("\t After: {0}".format(str(deserialized)))
+        print(("\tSerialized: {0}".format(serialized)))
+        print(("\tBefore: {0}".format(str(inputValue))))
+        print(("\t After: {0}".format(str(deserialized))))
     except Exception as e:
-        print("Caught exception running test: {}".format(str(e)))
+        print(("Caught exception running test: {}".format(str(e))))
         deserialized = ""
     printResult("Full Serialization Test", inputValue == deserialized)
 

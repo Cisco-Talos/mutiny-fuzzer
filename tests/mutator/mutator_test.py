@@ -44,7 +44,7 @@ def runFuzzer(fuzzer_input, seed):
     radamsa = subprocess.Popen([RADAMSA, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     (fuzzer_output, error_output) = radamsa.communicate(fuzzer_input)
     if error_output:
-        print("Seed {0} Error: {1}", seed, str(error_output))
+        print(("Seed {0} Error: {1}", seed, str(error_output)))
     return fuzzer_output
 
 def main():
@@ -69,7 +69,7 @@ def main():
     
     for i in range(0, ITERATIONS):
         if exit_flag:
-            print("Exit flag set, exiting.  Counts at exit were {0} dup {1} original {2} uniqueDup".format(dupCount, originalCount, uniqueDupCount))
+            print(("Exit flag set, exiting.  Counts at exit were {0} dup {1} original {2} uniqueDup".format(dupCount, originalCount, uniqueDupCount)))
             break
         
         # Avoid issues with non-printable characters, etc by casting as buffer
@@ -111,11 +111,11 @@ def main():
         database.commit()
         
         if i % 1000 == 0:
-            print("Iteration {0}: {1} dups {2} originals {3} uniqueDups so far".format(i, dupCount, originalCount, uniqueDupCount))
+            print(("Iteration {0}: {1} dups {2} originals {3} uniqueDups so far".format(i, dupCount, originalCount, uniqueDupCount)))
     
     if not exit_flag:
-        print("Run of {0} iterations complete, dumping into debugger for analysis.", ITERATIONS)
-        print("Counts at exit were {0} dup {1} original {2} uniqueDup".format(dupCount, originalCount, uniqueDupCount))
+        print(("Run of {0} iterations complete, dumping into debugger for analysis.", ITERATIONS))
+        print(("Counts at exit were {0} dup {1} original {2} uniqueDup".format(dupCount, originalCount, uniqueDupCount)))
         import pdb
         pdb.set_trace()
     else:

@@ -54,7 +54,7 @@ if args.action == "list":
     
 elif args.action in ["fuzzer2bin", "bin2fuzzer"]:
     if args.messagenum == None:
-        print("Message number required for action {0}".format(args.action))
+        print(("Message number required for action {0}".format(args.action)))
         exit(1)
 
     fuzzerData = FuzzerData()
@@ -65,7 +65,7 @@ elif args.action in ["fuzzer2bin", "bin2fuzzer"]:
         
         messageCount = len(fuzzerData.messageCollection.messages)
         if args.messagenum < 0 or args.messagenum >= messageCount:
-            print("Message number out of range: {0}".format(args.messagenum))
+            print(("Message number out of range: {0}".format(args.messagenum)))
             exit(1)
         
         if args.outfile:
@@ -73,7 +73,7 @@ elif args.action in ["fuzzer2bin", "bin2fuzzer"]:
         outFileDesc.write(fuzzerData.messageCollection.messages[args.messagenum].getOriginalMessage())
     elif args.action == "bin2fuzzer":
         if not args.outfile and not args.fuzzerfile:
-            print("outfile or fuzzerfile required for action {0}".format(args.action))
+            print(("outfile or fuzzerfile required for action {0}".format(args.action)))
         
         if args.fuzzerfile:
             fuzzerData.readFromFile(args.fuzzerfile, quiet=True)
@@ -82,7 +82,7 @@ elif args.action in ["fuzzer2bin", "bin2fuzzer"]:
                 # readFromFile() since outFileDesc is opened for write
                 fuzzerData.readFromFile(args.outfile, quiet=True)
             except Exception as ex:
-                print("Ignoring bad outfile, writing default .fuzzer data, error: {0}".format(str(ex)))
+                print(("Ignoring bad outfile, writing default .fuzzer data, error: {0}".format(str(ex))))
                 pass
         
         messageData = bytearray()
@@ -91,7 +91,7 @@ elif args.action in ["fuzzer2bin", "bin2fuzzer"]:
 
         messageCount = len(fuzzerData.messageCollection.messages)
         if args.messagenum < 0 or args.messagenum >= messageCount:
-            print("Message number out of range: {0}".format(args.messagenum))
+            print(("Message number out of range: {0}".format(args.messagenum)))
             exit(1)
         message = fuzzerData.messageCollection.messages[args.messagenum]
         message.setMessageFrom(Message.Format.Raw, messageData, message.isFuzzed)

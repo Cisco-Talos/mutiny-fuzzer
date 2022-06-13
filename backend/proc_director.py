@@ -66,12 +66,12 @@ class ProcDirector(object):
                 # Attempt to load custom processor
                 filepath = os.path.join(processDir, "{0}.py".format(filename))
                 imp.load_source(filename, filepath)
-                print("Loaded custom processor: {0}".format(filepath))
+                print(("Loaded custom processor: {0}".format(filepath)))
             except IOError:
                 # On failure, load default
                 filepath = os.path.join(defaultDir, "{0}.py".format(filename))
                 imp.load_source(filename, filepath)
-                print("Loaded default processor: {0}".format(filepath))
+                print(("Loaded default processor: {0}".format(filepath)))
                 
         # Set all the appropriate classes to the appropriate modules
         self.messageProcessor = sys.modules['message_processor'].MessageProcessor
@@ -95,8 +95,8 @@ class ProcDirector(object):
             # Raises a KeyboardInterrupt exception on main thread
             self.crashEvent.set()
             # Ugly but have to import here for this to work in monitorTarget on a custom processor
-            import thread
-            thread.interrupt_main()
+            import _thread
+            _thread.interrupt_main()
     
     def startMonitor(self, host, port):
         self.monitorWrapper = self.MonitorWrapper(host, port, self.monitor())
