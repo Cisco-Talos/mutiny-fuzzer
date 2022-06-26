@@ -133,7 +133,7 @@ with open(inputFilePath, 'r') as inputFile:
 
                 try:
                     # This appear to work for UDP.  Go figure, thanks scapy.
-                    tempMessageData = str(data[i].payload.payload.payload)
+                    tempMessageData = bytes(data[i].payload.payload.payload)
                 except AttributeError:
                     tempMessageData = ""
                 if len(tempMessageData) == 0:
