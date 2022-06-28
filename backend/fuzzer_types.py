@@ -150,11 +150,13 @@ class Message(object):
     
     @classmethod
     def serializeByteArray(cls, byteArray):
-        return repr(byteArray.decode('utf-8'))
+        if type(byteArray) != bytearray:
+            raise Exception(f'Argument to serializeByteArray isn\'t a byte array: {byteArray}')
+        return repr(bytes(byteArray))[1:] # Don't include leading 'b', clearer/easier in .fuzzer file
     
     @classmethod
     def deserializeByteArray(cls, string):
-        return bytearray(ast.literal_eval(string).encode('utf-8'))
+        return bytearray(ast.literal_eval(f'b{string}'))
     
     def getAlteredSerialized(self):
         if len(self.subcomponents) < 1:
