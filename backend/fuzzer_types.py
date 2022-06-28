@@ -34,6 +34,7 @@
 # This script defines the various message and data types used in
 # the fuzzer, and utility functions used by them.
 #------------------------------------------------------------------
+import ast
 
 class MessageSubComponent(object):
     def __init__(self, message, isFuzzed):
@@ -149,12 +150,11 @@ class Message(object):
     
     @classmethod
     def serializeByteArray(cls, byteArray):
-        return repr(str(byteArray))
+        return repr(byteArray.decode('utf-8'))
     
     @classmethod
     def deserializeByteArray(cls, string):
-        # This appears to properly reverse repr() without the risks of eval
-        return bytearray(string[1:-1].encode('utf8').decode('unicode-escape').encode('utf8'))
+        return bytearray(ast.literal_eval(string).encode('utf-8'))
     
     def getAlteredSerialized(self):
         if len(self.subcomponents) < 1:

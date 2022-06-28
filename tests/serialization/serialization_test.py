@@ -40,13 +40,15 @@ def printResult(message, isPass):
 
 def testString(inputValue):
     # Test the serialization function itself
+    # String needs to be bytearray
+    inputValue = bytearray(inputValue.encode('utf-8'))
     try:
         print(("\n{}Testing direct serialization and deserialization...{}".format(Color.BOLD, Color.END)))
         serialized = Message.serializeByteArray(inputValue)
         deserialized = Message.deserializeByteArray(serialized)
         print(("\tSerialized: {0}".format(serialized)))
-        print(("\tBefore: {0}".format(str(inputValue))))
-        print(("\t After: {0}".format(str(deserialized))))
+        print(("\tBefore: {0}".format(inputValue.decode('utf-8'))))
+        print(("\t After: {0}".format(deserialized.decode('utf-8'))))
     except Exception as e:
         print(("Caught exception running test: {}".format(str(e))))
         deserialized = ""
@@ -62,8 +64,8 @@ def testString(inputValue):
         message.setFromSerialized(serialized)
         deserialized = message.getOriginalMessage()
         print(("\tSerialized: {0}".format(serialized)))
-        print(("\tBefore: {0}".format(str(inputValue))))
-        print(("\t After: {0}".format(str(deserialized))))
+        print(("\tBefore: {0}".format(inputValue.decode('utf-8'))))
+        print(("\t After: {0}".format(deserialized.decode('utf-8'))))
     except Exception as e:
         print(("Caught exception running test: {}".format(str(e))))
         deserialized = ""
@@ -71,7 +73,7 @@ def testString(inputValue):
 
 def main():
     # Try all possible ASCII characters
-    allchars = bytearray('datadatadata unprintable chars:')
+    allchars = 'datadatadata unprintable chars:'
     for i in range (0, 256):
         allchars += chr(i)
     testString(allchars)
