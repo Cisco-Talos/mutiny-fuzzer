@@ -114,8 +114,8 @@ def server_init():
 
 def client_handler(cli_sock,cli_addr=None,udp=False): 
     try:
-        ip = cli_addr[0]
-        port = cli_addr[1] 
+        ip = cli_addr[0].encode()
+        port = cli_addr[1]
         cli_sock.settimeout(TIMEOUT)
         fs = fuzz_session(ip,port,-1,-1,None)
     except:
@@ -139,9 +139,10 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
 # 4 byte - number of test cases 
     if not udp:
         try:
-            msg = cli_sock.recv(4096).split('.')
-            print("asdf")
-        except:
+            print('debug')
+            msg = cli_sock.recv(4096).decode('utf8').split('.')
+            print('MEGA DEBUG' + msg)
+        except Exception as e:
             pass
     else:
         try:
@@ -203,9 +204,9 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
         print("status: %d" % (i,))
     
     if udp:
-        cli_sock.sendto("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len),addr) 
+        cli_sock.sendto(("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)).encode(),addr) 
     else:
-        cli_sock.send("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)) 
+        cli_sock.send(("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)).encode()) 
     
 if __name__ == '__main__':
     

@@ -10,44 +10,12 @@
 # Copyright (c) 2014-2015 by Cisco Systems, Inc.
 # All rights reserved.
 #
-# This script takes pcap or c_arrays output from Wireshark and 
+# takes pcap or c_arrays output from Wireshark and 
 # processes it into a .fuzzer file for use with mutiny.py
 #------------------------------------------------------------------
-import os
-import sys
-import argparse
-
-from backend.fuzzer_types import Message
-from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange
-from backend.fuzzerdata import FuzzerData
-import scapy.all
-
-GREEN = "\033[92m"
-CLEAR = "\033[00m"
-
-#So argparse prints help if no args are given
-if len(sys.argv) == 1:
-    sys.argv.append("-h")
-
-parser = argparse.ArgumentParser()
-parser.add_argument("pcap_file", 
-                    help="Pcap/c_array output from wireshark")
-
-parser.add_argument("-d","--processor_dir", 
-                    help = "Location of custom pcap Message/exception/log/monitor processors if any, see appropriate *processor.py source in ./mutiny_classes/ for implimentation details",
-                    nargs=1,
-                    default=["default"])
 
 
-parser.add_argument("-a", "--dump_ascii", 
-                    help="Dump the ascii output from packets ", 
-                    action="store_true",
-                    default=False)
 
-parser.add_argument("-f", "--force",
-                    help="Take all default options",
-                    action = "store_true",  
-                    default=False) 
 
 args = parser.parse_args()
 inputFilePath = args.pcap_file

@@ -22,10 +22,10 @@ import os
 ITERATIONS = 1000000
 
 # Sample seed string for fuzzing
-START_STRING = "GET /test1234 HTTP/1.1\r\nFrom: joebob@test.com\r\nUser-Agent: Mozilla/1.2\r\n\r\n"
+START_STRING = b'GET /test1234 HTTP/1.1\r\nFrom: joebob@test.com\r\nUser-Agent: Mozilla/1.2\r\n\r\n'
 
 # Some other defines taken from mutiny.py
-RADAMSA=os.path.abspath( os.path.join(__file__, "../../../radamsa-0.3/bin/radamsa") )
+RADAMSA=os.path.abspath( os.path.join(__file__, "../../../../radamsa/bin/radamsa") )
 
 # Flag to tell main execution to wrap up and exit
 exit_flag = False
@@ -73,7 +73,7 @@ def main():
             break
         
         # Avoid issues with non-printable characters, etc by casting as buffer
-        fuzzedString = buffer(runFuzzer(START_STRING, i))
+        fuzzedString = memoryview(runFuzzer(START_STRING, i))
         
         # Look to see if output has already appeared
         cursor.execute("""select count from fuzzer_outputs where output=?;""", (fuzzedString,))
