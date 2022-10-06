@@ -1,7 +1,7 @@
 import unittest
 import backend.fuzzer_types 
 
-class TestfuzzerTypes(unittest.TestCase):
+class TestMessageSubComponent(unittest.TestCase):
 
     def setUp(self):
         self.MessageSubComponent = MessageSubComponent('message', False)
@@ -32,53 +32,6 @@ class TestfuzzerTypes(unittest.TestCase):
     def test_getOriginalByteArray(self):
         self.assertEqual(self.MessageSubComponent.getOriginalByteArray(),self.message)
 
-    # Message Class ----------------
-    def test_MessageInit(self):
-        pass
-
-    def test_getOriginalSubComponents(self):
-        pass
-
-    def test_getAlteredSubComponents(self):
-
-    def test_getOriginalMessage(self):
-        pass
-
-    def test_resetAlteredMessage(self):
-        pass
-
-    def test_setMessageFrom(self):
-        pass
-
-    def test_appendMessageFrom(self):
-        pass
-
-    def test_isOutbound(self):
-        pass
-    
-    def test___eq__(self):
-        pass
-
-    def test_serializeByteArray(self):
-        pass
-
-    def test_deserializeByteArray(self):
-        pass
-
-    def test_getAlteredSerialized(self):
-        pass
-
-    def test_getSerialized(self):
-        pass
-
-    def test__extractMessageComponents(self):
-        pass
-
-    def test_setFromSerialized(self):
-        pass
-
-    def test_appendFromSerialized(self):
-        pass
 
     # MessageCollection Class ----
     def test_MessageCollectioninit(self):

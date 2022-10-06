@@ -109,7 +109,7 @@ class Message(object):
         elif sourceType == self.Format.Ascii:
             message = self.deserializeByteArray(message)
         elif sourceType == self.Format.Raw:
-            pass # message can remain in raw format
+            message = message
         else:
             raise RuntimeError("Invalid sourceType")
         
