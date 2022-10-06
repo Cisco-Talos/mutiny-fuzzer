@@ -37,14 +37,14 @@
 import ast
 
 class MessageSubComponent(object):
-    def __init__(self, message, isFuzzed):
+    def __init__(self, message, isFuzzed: bool):
         self.message = message
         self.isFuzzed = isFuzzed
         # This includes both fuzzed messages and messages the user
         # has altered with messageprocessor callbacks
         self._altered = message
     
-    def setAlteredByteArray(self, byteArray):
+    def setAlteredByteArray(self, byteArray: bytearray):
         self._altered = byteArray
     
     def getAlteredByteArray(self):
@@ -103,13 +103,13 @@ class Message(object):
     # message - Message in above format
     # isFuzzed - whether this message should have its subcomponent
     #   flag isFuzzed set
-    def setMessageFrom(self, sourceType, message, isFuzzed):
+    def setMessageFrom(self, sourceType: Format, message, isFuzzed: bool):
         if sourceType == self.Format.CommaSeparatedHex:
             message = bytearray([x.decode("hex") for x in message.split(",")])
         elif sourceType == self.Format.Ascii:
             message = self.deserializeByteArray(message)
         elif sourceType == self.Format.Raw:
-            message = message
+            pass # message can remain in raw format
         else:
             raise RuntimeError("Invalid sourceType")
         
@@ -122,7 +122,7 @@ class Message(object):
     # adding a new subcomponent
     # createNewSubcomponent - If false, don't create another subcomponent,
     #   instead, append new message data to last subcomponent in message
-    def appendMessageFrom(self, sourceType, message, isFuzzed, createNewSubcomponent=True):
+    def appendMessageFrom(self, sourceType: Format, message, isFuzzed: bool, createNewSubcomponent: bool = True):
         if sourceType == self.Format.CommaSeparatedHex:
             newMessage = bytearray([x.decode("hex") for x in message.split(",")])
         elif sourceType == self.Format.Ascii:
@@ -155,7 +155,7 @@ class Message(object):
         return repr(bytes(byteArray))[1:] # Don't include leading 'b', clearer/easier in .fuzzer file
     
     @classmethod
-    def deserializeByteArray(cls, string):
+    def deserializeByteArray(cls, string: str):
         return bytearray(ast.literal_eval(f'b{string}'))
     
     def getAlteredSerialized(self):

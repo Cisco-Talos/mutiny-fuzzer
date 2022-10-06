@@ -73,6 +73,8 @@ SEED_LOOP = []
 # For dumpraw option, dump into log directory by default, else 'dumpraw'
 DUMPDIR = ""
 
+FUZZER_DATA = None
+
 # colors TODO: add colors to error/warning messages
 SUCCESS = "\033[92m"
 WARNING = "\033[93m"
@@ -85,7 +87,7 @@ def sendPacket(connection: socket, addr: tuple, outPacketData: bytearray):
     Takes a socket and outbound data packet (byteArray), sends it out.
     If debug mode is enabled, we print out the raw bytes
     '''
-    connection.settimeout(fuzzerData.receiveTimeout)
+    connection.settimeout(FUZZER_DATA.receiveTimeout)
     if connection.type == socket.SOCK_STREAM:
         connection.send(outPacketData)
     else:
@@ -99,7 +101,7 @@ def sendPacket(connection: socket, addr: tuple, outPacketData: bytearray):
 
 def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
     readBufSize = 4096
-    connection.settimeout(fuzzerData.receiveTimeout)
+    connection.settimeout(FUZZER_DATA.receiveTimeout)
 
     if connection.type == socket.SOCK_STREAM or connection.type == socket.SOCK_DGRAM:
         response = bytearray(connection.recv(readBufSize))
@@ -125,7 +127,7 @@ def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
         print("\tReceived: %s" % (response))
     return response
 
-def performRun(fuzzerData: FuzzerData, host: tuple, logger: Logger, messageProcessor: MessageProcessor, seed: int = -1):
+def performRun(host: tuple, logger: Logger, messageProcessor: MessageProcessor, seed: int = -1):
     '''
     Perform a fuzz run.  
     If seed is -1, don't perform fuzzing (test run)
@@ -135,7 +137,7 @@ def performRun(fuzzerData: FuzzerData, host: tuple, logger: Logger, messageProce
     if logger != None:
         logger.resetForNewRun()
     
-    addrs = socket.getaddrinfo(host,fuzzerData.port)
+    addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
     host = addrs[0][4][0]
     if host == "::1":
         host = "127.0.0.1"
@@ -145,10 +147,10 @@ def performRun(fuzzerData: FuzzerData, host: tuple, logger: Logger, messageProce
     # will have to actively go out of their way to subvert this.
     if "." in host:
         socket_family = socket.AF_INET
-        addr = (host,fuzzerData.port)
+        addr = (host,FUZZER_DATA.port)
     elif ":" in host:
         socket_family = socket.AF_INET6 
-        addr = (host,fuzzerData.port)
+        addr = (host,FUZZER_DATA.port)
     else:
         socket_family = socket.AF_UNIX
         addr = (host)
@@ -160,15 +162,15 @@ def performRun(fuzzerData: FuzzerData, host: tuple, logger: Logger, messageProce
     
     # Call messageprocessor preconnect callback if it exists
     try:
-        messageProcessor.preConnect(seed, host, fuzzerData.port) 
+        messageProcessor.preConnect(seed, host, FUZZER_DATA.port) 
     except AttributeError:
         pass
     
     # for TCP/UDP/RAW support
-    if fuzzerData.proto == "tcp":
+    if FUZZER_DATA.proto == "tcp":
         connection = socket.socket(socket_family,socket.SOCK_STREAM)
         # Don't connect yet, until after we do any binding below
-    elif fuzzerData.proto == "tls":
+    elif FUZZER_DATA.proto == "tls":
         try:
             _create_unverified_https_context = ssl._create_unverified_context
         except AttributeError:
@@ -180,54 +182,54 @@ def performRun(fuzzerData: FuzzerData, host: tuple, logger: Logger, messageProce
         tcpConnection = jjjjsocket.socket(socket_family,socket.SOCK_STREAM)
         connection = ssl.wrap_socket(tcpConnection)
         # Don't connect yet, until after we do any binding below
-    elif fuzzerData.proto == "udp":
+    elif FUZZER_DATA.proto == "udp":
         connection = socket.socket(socket_family,socket.SOCK_DGRAM)
     # PROTO = dictionary of assorted L3 proto => proto number
     # e.g. "icmp" => 1
-    elif fuzzerData.proto in PROTO:
-        connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[fuzzerData.proto]) 
-        if fuzzerData.proto != "raw":
+    elif FUZZER_DATA.proto in PROTO:
+        connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
+        if FUZZER_DATA.proto != "raw":
             connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
         addr = (host,0)
         try:
-            connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[fuzzerData.proto]) 
+            connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
         except Exception as e:
             print(e)
             print("Unable to create raw socket, please verify that you have sudo access")
             sys.exit(0)
-    elif fuzzerData.proto == "L2raw":
+    elif FUZZER_DATA.proto == "L2raw":
         connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
     else:
         addr = (host,0)
         try:
             #test if it's a valid number 
-            connection = socket.socket(socket_family,socket.SOCK_RAW,int(fuzzerData.proto)) 
+            connection = socket.socket(socket_family,socket.SOCK_RAW,int(FUZZER_DATA.proto)) 
             connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
         except Exception as e:
             print(e)
             print("Unable to create raw socket, please verify that you have sudo access")
             sys.exit(0)
         
-    if fuzzerData.proto == "tcp" or fuzzerData.proto == "udp" or fuzzerData.proto == "tls":
+    if FUZZER_DATA.proto == "tcp" or FUZZER_DATA.proto == "udp" or FUZZER_DATA.proto == "tls":
         # Specifying source port or address is only supported for tcp and udp currently
-        if fuzzerData.sourcePort != -1:
+        if FUZZER_DATA.sourcePort != -1:
             # Only support right now for tcp or udp, but bind source port address to something
             # specific if requested
-            if fuzzerData.sourceIP != "" or fuzzerData.sourceIP != "0.0.0.0":
-                connection.bind((fuzzerData.sourceIP, fuzzerData.sourcePort))
+            if FUZZER_DATA.sourceIP != "" or FUZZER_DATA.sourceIP != "0.0.0.0":
+                connection.bind((FUZZER_DATA.sourceIP, fuzzerData.sourcePort))
             else:
                 # User only specified a port, not an IP
-                connection.bind(('0.0.0.0', fuzzerData.sourcePort))
-        elif fuzzerData.sourceIP != "" and fuzzerData.sourceIP != "0.0.0.0":
+                connection.bind(('0.0.0.0', FUZZER_DATA.sourcePort))
+        elif FUZZER_DATA.sourceIP != "" and FUZZER_DATA.sourceIP != "0.0.0.0":
             # No port was specified, so 0 should auto-select
-            connection.bind((fuzzerData.sourceIP, 0))
-    if fuzzerData.proto == "tcp" or fuzzerData.proto == "tls":
+            connection.bind((FUZZER_DATA.sourceIP, 0))
+    if FUZZER_DATA.proto == "tcp" or FUZZER_DATA.proto == "tls":
         # Now that we've had a chance to bind as necessary, connect
         connection.connect(addr)
 
     i = 0   
-    for i in range(0, len(fuzzerData.messageCollection.messages)):
-        message = fuzzerData.messageCollection.messages[i]
+    for i in range(0, len(FUZZER_DATA.messageCollection.messages)):
+        message = FUZZER_DATA.messageCollection.messages[i]
         
         # Go ahead and revert any fuzzing or messageprocessor changes before proceeding
         message.resetAlteredMessage()
@@ -338,9 +340,9 @@ def sigint_handler(signal: int, frame: object):
 
 def fuzz(args: argparse.Namespace):
     # initialize fuzzing environment according to user provided arguments
-    (messageProcessor, monitor, exceptionProcessor, logger, fuzzerData) = fuzzSetup(args)
+    (messageProcessor, monitor, exceptionProcessor, logger) = fuzzSetup(args)
 
-    i = MIN_RUN_NUMBER-1 if fuzzerData.shouldPerformTestRun else MIN_RUN_NUMBER
+    i = MIN_RUN_NUMBER-1 if FUZZER_DATA.shouldPerformTestRun else MIN_RUN_NUMBER
     failureCount = 0
     loop_len = len(SEED_LOOP) # if --loop
     host = args.target_host
@@ -348,7 +350,7 @@ def fuzz(args: argparse.Namespace):
     logAll = args.logAll if not isReproduce else False
 
     while True:
-        lastMessageCollection = deepcopy(fuzzerData.messageCollection)
+        lastMessageCollection = deepcopy(FUZZER_DATA.messageCollection)
         wasCrashDetected = False
         print("\n** Sleeping for %.3f seconds **" % args.sleeptime)
         time.sleep(args.sleeptime)
@@ -357,20 +359,20 @@ def fuzz(args: argparse.Namespace):
             try:
                 if args.dumpraw:
                     print("\n\nPerforming single raw dump case: %d" % args.dumpraw)
-                    performRun(fuzzerData, host, logger, messageProcessor, seed=args.dumpraw)  
+                    performRun(host, logger, messageProcessor, seed=args.dumpraw)  
                 elif i == MIN_RUN_NUMBER-1:
                     print("\n\nPerforming test run without fuzzing...")
-                    performRun(fuzzerData, host, logger, messageProcessor, seed=-1) 
+                    performRun(host, logger, messageProcessor, seed=-1) 
                 elif loop_len: 
                     print("\n\nFuzzing with seed %d" % (SEED_LOOP[i%loop_len]))
-                    performRun(fuzzerData, host, logger, messageProcessor, seed=SEED_LOOP[i%loop_len]) 
+                    performRun(host, logger, messageProcessor, seed=SEED_LOOP[i%loop_len]) 
                 else:
                     print("\n\nFuzzing with seed %d" % (i))
-                    performRun(fuzzerData, host, logger, messageProcessor, seed=i) 
+                    performRun(host, logger, messageProcessor, seed=i) 
                 #if --quiet, (logger==None) => AttributeError
                 if logAll:
                     try:
-                        logger.outputLog(i, fuzzerData.messageCollection, "LogAll ")
+                        logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                     except AttributeError:
                         pass
                      
@@ -378,7 +380,7 @@ def fuzz(args: argparse.Namespace):
                 if monitor.crashEvent.isSet():
                     print("Crash event detected")
                     try:
-                        logger.outputLog(i, fuzzerData.messageCollection, "Crash event detected")
+                        logger.outputLog(i, FUZZER_DATA.messageCollection, "Crash event detected")
                         #exit()
                     except AttributeError: 
                         pass
@@ -386,7 +388,7 @@ def fuzz(args: argparse.Namespace):
 
                 elif logAll:
                     try:
-                        logger.outputLog(i, fuzzerData.messageCollection, "LogAll ")
+                        logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                     except AttributeError:
                         pass
                 
@@ -403,13 +405,13 @@ def fuzz(args: argparse.Namespace):
             if failureCount == 0:
                 try:
                     print("MessageProcessor detected a crash")
-                    logger.outputLog(i, fuzzerData.messageCollection, str(e))
+                    logger.outputLog(i, FUZZER_DATA.messageCollection, str(e))
                 except AttributeError:  
                     pass   
 
             if logAll:
                 try:
-                    logger.outputLog(i, fuzzerData.messageCollection, "LogAll ")
+                    logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                 except AttributeError:
                     pass
 
@@ -429,7 +431,7 @@ def fuzz(args: argparse.Namespace):
             
         except LogAndHaltException as e:
             if logger:
-                logger.outputLog(i, fuzzerData.messageCollection, str(e))
+                logger.outputLog(i, FUZZER_DATA.messageCollection, str(e))
                 print("Received LogAndHaltException, logging and halting")
             else:
                 print("Received LogAndHaltException, halting but not logging (quiet mode)")
@@ -456,10 +458,10 @@ def fuzz(args: argparse.Namespace):
             exit()
 
         if wasCrashDetected:
-            if failureCount < fuzzerData.failureThreshold:
-                print("Failure %d of %d allowed for seed %d" % (failureCount, fuzzerData.failureThreshold, i))
-                print("The test run didn't complete, continuing after %d seconds..." % (fuzzerData.failureTimeout))
-                time.sleep(fuzzerData.failureTimeout)
+            if failureCount < FUZZER_DATA.failureThreshold:
+                print("Failure %d of %d allowed for seed %d" % (failureCount, FUZZER_DATA.failureThreshold, i))
+                print("The test run didn't complete, continuing after %d seconds..." % (FUZZER_DATA.failureTimeout))
+                time.sleep(FUZZER_DATA.failureTimeout)
             else:
                 print("Failed %d times, moving to next test." % (failureCount))
                 failureCount = 0
@@ -475,6 +477,7 @@ def fuzz(args: argparse.Namespace):
             exit()
 
 def fuzzSetup(args: argparse.Namespace):
+    global FUZZER_DATA
     #Populate global arguments from parseargs
     fuzzerFilePath = args.prepped_fuzz
     host = args.target_host
@@ -495,19 +498,19 @@ def fuzzSetup(args: argparse.Namespace):
     ###Here we read in the fuzzer file into a dictionary for easier variable propagation
     optionDict = {"unfuzzedBytes":{}, "message":[]}
 
-    fuzzerData = FuzzerData()
+    FUZZER_DATA = FuzzerData()
     print("Reading in fuzzer data from %s..." % (fuzzerFilePath))
-    fuzzerData.readFromFile(fuzzerFilePath)
+    FUZZER_DATA.readFromFile(fuzzerFilePath)
 
-    (messageProcessor, monitor, exceptionProcessor, logger) = processorSetup(fuzzerData, fuzzerFolder, outputDataFolderPath, args)
+    (messageProcessor, monitor, exceptionProcessor, logger) = processorSetup( fuzzerFolder, outputDataFolderPath, args)
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-    return (messageProcessor, monitor, exceptionProcessor, logger, fuzzerData)
+    return (messageProcessor, monitor, exceptionProcessor, logger)
 
     
     
-def processorSetup(fuzzerData: FuzzerData, fuzzerFolder: str, outputDataFolderPath: str, args: argparse.Namespace):
+def processorSetup( fuzzerFolder: str, outputDataFolderPath: str, args: argparse.Namespace):
     ######## Processor Setup ################
     # The processor just acts as a container #
     # class that will import custom versions #
@@ -518,7 +521,7 @@ def processorSetup(fuzzerData: FuzzerData, fuzzerFolder: str, outputDataFolderPa
     ##########################################
 
     # Assign options to variables, error on anything that's missing/invalid
-    processorDirectory = fuzzerData.processorDirectory
+    processorDirectory = FUZZER_DATA.processorDirectory
     if processorDirectory == "default":
         # Default to fuzzer file folder
         processorDirectory = fuzzerFolder
@@ -532,7 +535,7 @@ def processorSetup(fuzzerData: FuzzerData, fuzzerFolder: str, outputDataFolderPa
     ########## Launch child monitor thread
         ### monitor.task = spawned thread
         ### monitor.crashEvent = threading.Event()
-    monitor = procDirector.startMonitor(args.target_host,fuzzerData.port)
+    monitor = procDirector.startMonitor(args.target_host,FUZZER_DATA.port)
 
     #! make it so logging message does not appear if reproducing (i.e. -r x-y cmdline arg is set)
     logger = None 

@@ -63,6 +63,7 @@ def processInputFile():
     Processes input files by opening them and dispatching a pcap ingestor. if pcap ingestor fails,
     attempts to dispach a c_array ingestor
     '''
+
     if not os.path.isfile(INPUT_FILE_PATH):
         print(ERROR + "Cannot read input %s" % (INPUT_FILE_PATH) + CLEAR)
         exit()

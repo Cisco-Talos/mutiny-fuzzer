@@ -170,3 +170,8 @@ previous run and halt.  This is true in most cases, but this behavior can be
 changed to that of any of the exceptions in
 `mutiny_classes/mutiny_exceptions.py` as needed, allowing tailoring of crash
 detection and error correction.
+
+### Testing
+Testing is implemented using python's [unittest](https://docs.python.org/3/library/unittest.html) library. To run the full test suite, you can use the following command from the projects root directory
+
+`python3 -m unittest tests/units/*test.py`
