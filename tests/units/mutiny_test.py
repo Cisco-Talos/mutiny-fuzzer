@@ -3,6 +3,8 @@ import unittest
 class TestMutiny(unittest.TestCase):
     def setUp(self):
         pass
+    def tearDown(self):
+        pass
 
     def test_sendPacket(self):
         pass

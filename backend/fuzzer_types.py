@@ -35,6 +35,9 @@
 # the fuzzer, and utility functions used by them.
 #------------------------------------------------------------------
 import ast
+import os
+import os.path
+from copy import deepcopy
 
 class MessageSubComponent(object):
     def __init__(self, message, isFuzzed: bool):
@@ -285,9 +288,6 @@ class MessageCollection(object):
         # All messages passed
         return True
 
-import os
-import os.path
-from copy import deepcopy
 
 # Handles all the logging of the fuzzing session
 # Log messages can be found at sample_apps/<app>/<app>_logs/<date>/
