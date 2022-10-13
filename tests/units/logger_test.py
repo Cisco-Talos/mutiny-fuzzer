@@ -2,9 +2,9 @@ import unittest
 import backend.fuzzer_types
 
 class TestLogger(unittest.TestCase):
-    def setUp():
+    def setUp(self):
         pass
-    def tearDown():
+    def tearDown(self):
         pass
 
     def test_loggerInit(self):

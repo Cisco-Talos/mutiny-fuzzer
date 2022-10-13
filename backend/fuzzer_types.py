@@ -38,9 +38,10 @@ import ast
 import os
 import os.path
 from copy import deepcopy
+import codecs
 
 class MessageSubComponent(object):
-    def __init__(self, message, isFuzzed: bool):
+    def __init__(self, message: bytearray, isFuzzed: bool):
         self.message = message
         self.isFuzzed = isFuzzed
         # This includes both fuzzed messages and messages the user
@@ -108,7 +109,10 @@ class Message(object):
     #   flag isFuzzed set
     def setMessageFrom(self, sourceType: Format, message, isFuzzed: bool):
         if sourceType == self.Format.CommaSeparatedHex:
-            message = bytearray([x.decode("hex") for x in message.split(",")])
+            print(message)
+            message = message.replace(',', '')
+            message = bytearray.fromhex(message)
+            #message = bytearray([x for x in message.split(",")])
         elif sourceType == self.Format.Ascii:
             message = self.deserializeByteArray(message)
         elif sourceType == self.Format.Raw:
@@ -152,7 +156,7 @@ class Message(object):
         return self.direction == other.direction and self.message == other.message
     
     @classmethod
-    def serializeByteArray(cls, byteArray):
+    def serializeByteArray(cls, byteArray: bytearray):
         if type(byteArray) != bytearray:
             raise Exception(f'Argument to serializeByteArray isn\'t a byte array: {byteArray}')
         return repr(bytes(byteArray))[1:] # Don't include leading 'b', clearer/easier in .fuzzer file
