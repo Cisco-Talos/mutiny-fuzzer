@@ -129,7 +129,8 @@ class Message(object):
     #   instead, append new message data to last subcomponent in message
     def appendMessageFrom(self, sourceType: Format, message, isFuzzed: bool, createNewSubcomponent: bool = True):
         if sourceType == self.Format.CommaSeparatedHex:
-            newMessage = bytearray([x.decode("hex") for x in message.split(",")])
+            message = message.replace(',', '')
+            newMessage = bytearray.fromhex(message)
         elif sourceType == self.Format.Ascii:
             newMessage = self.deserializeByteArray(message)
         elif sourceType == self.Format.Raw:

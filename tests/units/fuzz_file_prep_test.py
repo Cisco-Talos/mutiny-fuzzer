@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 import backend.fuzz_file_prep as prep
 from backend.fuzzer_data import FuzzerData
 
@@ -7,12 +8,12 @@ from backend.fuzzer_data import FuzzerData
 class TestFuzzFilePrep(unittest.TestCase):
     def setUp(self):
         prep.INPUT_FILE_PATH = '../trace.pcap'
-        prep.FORCE_DEFAULTS = False
         prep.FUZZER_DATA = FuzzerData()
         prep.FUZZER_DATA.processorDirectory = 'default'
 
 
-        # TODO: annotate with expected fail
+    # TODO: annotate with expected fail
+    '''
     def test_processInputFileExpectedFails(self):
         # nonexistent file
         prep.INPUT_FILE_PATH = 'non-existent.file'
@@ -24,22 +25,23 @@ class TestFuzzFilePrep(unittest.TestCase):
         prep.processInputFile()
         self.assertEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
 
-    def test_processInputFile(self):
+    '''
 
+
+    @patch('backend.menu_functions.prompt', return_value=True)
+    def test_processPcap(self, mock):
+        # --- with defaults
+        prep.FORCE_DEFAULTS = True
         # pcap
         prep.INPUT_FILE_PATH = './tests/units/input_files/test.pcap'
         prep.processInputFile()
         self.assertNotEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
 
+    def test_processCArray(self):
         # cArray
         prep.INPUT_FILE_PATH = './tests/units/input_files/test.cra'
         prep.processInputFile()
         self.assertNotEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
-
-    def test_processPcap(self):
-        pass
-
-    def test_processCArray(self):
         pass
 
     def test_genFuzzConfig(self):
@@ -53,5 +55,4 @@ class TestFuzzFilePrep(unittest.TestCase):
 
     def test_promptAndOutput(self):
         pass
-
 
