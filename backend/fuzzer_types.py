@@ -109,10 +109,8 @@ class Message(object):
     #   flag isFuzzed set
     def setMessageFrom(self, sourceType: Format, message, isFuzzed: bool):
         if sourceType == self.Format.CommaSeparatedHex:
-            print(message)
             message = message.replace(',', '')
             message = bytearray.fromhex(message)
-            #message = bytearray([x for x in message.split(",")])
         elif sourceType == self.Format.Ascii:
             message = self.deserializeByteArray(message)
         elif sourceType == self.Format.Raw:

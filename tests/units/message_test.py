@@ -1,4 +1,5 @@
 import unittest
+import ast
 from backend.fuzzer_types import Message, MessageSubComponent
 
 class TestMessage(unittest.TestCase):
@@ -85,42 +86,164 @@ class TestMessage(unittest.TestCase):
     def test_setMessageFrom(self):
         isFuzzed = False
         # commaSeperatedHex
-        st = 0
-        message = '00,01,02,20,2a'
-        self.message.setMessageFrom(st,message,isFuzzed)
-        self.assertEqual(self.subcomponents[0], 
+        sourceType = 0
+        message = '01,02,20,2a'.replace(',','')
+        messageBytes = bytearray.fromhex(message)
+        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
 
         # Ascii
-        st = 1
+        sourceType = 1
         message = 'foo\x00\x01'
-        self.message.setMessageFrom(
+        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[0].message, messageBytes)
 
         # Raw
-        st = 2
+        sourceType = 2
         message = bytearray('foo')
+        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[0].message, message)
 
         # Invalid
         message = [1,2,3]
+        # TODO: assert failure
+        #self.message.setMessageFrom(sourceType, message, isFuzzed)
         
         # isFuzzed=True
         isFuzzed = True
-        pass
+        # commaSeperatedHex
+        sourceType = 0
+        message = '01,02,20,2a'.replace(',','')
+        messageBytes = bytearray.fromhex(message)
+        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
+
+        # Ascii
+        sourceType = 1
+        message = 'foo\x00\x01'
+        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[0].message, messageBytes)
+
+        # Raw
+        sourceType = 2
+        message = bytearray('foo')
+        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[0].message, message)
 
 
     def test_appendMessageFrom(self):
-        pass
+        isFuzzed = False
+        # commaSeperatedHex
+        sourceType = 0
+        message = '01,02,20,2a'.replace(',','')
+        messageBytes = bytearray.fromhex(message)
+        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
+        # Ascii
+        sourceType = 1
+        message = 'foo\x00\x01'
+        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[1].message, messageBytes)
+        # Raw
+        sourceType = 2
+        message = bytearray('foo')
+        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[2].message, message)
+
+        # ---- isFuzzed  = True
+        isFuzzed = True
+        # commaSeperatedHex
+        sourceType = 0
+        message = '01,02,20,2a'.replace(',','')
+        messageBytes = bytearray.fromhex(message)
+        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.message.subcomponents[3].message, messageBytes)
+        self.assertTrue(self.isFuzzed)
+        # Ascii
+        sourceType = 1
+        message = 'foo\x00\x01'
+        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[4].message, messageBytes)
+        self.assertTrue(self.isFuzzed)
+        # Raw
+        sourceType = 2
+        message = bytearray('foo')
+        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[5].message, message)
+        self.assertTrue(self.isFuzzed)
+
+        # ----- createNewSubcomponent = False
+        appendedMessage = message
+        createNewSubcomponent = False
+        # commaSeperatedHex
+        sourceType = 0
+        message = '01,02,20,2a'.replace(',','')
+        messageBytes = bytearray.fromhex(message)
+        appendedMessage  += messageBytes
+        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.message.subcomponents[5].message, appendedMessage)
+        # Ascii
+        sourceType = 1
+        message = 'foo\x00\x01'
+        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
+        appendedMessage += messageBytes
+        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.assertEqual(self.subcomponents[5].message, appendedMessage)
+        # Raw
+        sourceType = 2
+        message = bytearray('foo')
+        appendedMessage += message
+        self.message.appendMessageFrom(sourceType, message, isFuzzed, createNewSubcomponent)
+        self.assertEqual(self.subcomponents[5].message, appendedMessage)
+
 
 
     def test_isOutbound(self):
-        pass
+        self.message.direction =  "outbound"
+        self.assertTrue(self.message.isOutbound())
+
+        self.message.direction = "inbound"
+        self.assertFalse(self.message.isOutbound())
+
+        self.message.direction = "invalidDirection"
+        self.assertFalse(self.message.isOutound())
     
 
     def test___eq__(self):
-        pass
+        m1 = Message()
+        m2 = Message()
+        # --- equal message, varying direction
+        m1.message = b'foo'
+        m2.message = b'foo'
+        m1.direction = "outbound"
+        m2.direction = "outbound"
+        self.assertTrue(m1 == m2)
+        m1.direction = "inbound"
+        m2.direction = "outbound"
+        self.assertFalse(m1 == m2)
+        m1.direction = "inbound"
+        m2.direction = "inbound"
+        self.assertTrue(m1 == m2)
+
+        # --- unequal message
+        m1.message = b'foo'
+        m1.message = b'bar'
+        m1.direction = "outbound"
+        m2.direction = "outbound"
+        self.assertFalse(m1 == m2)
+        m1.direction = "inbound"
+        m2.direction = "outbound"
+        self.assertFalse(m1 == m2)
+        m1.direction = "inbound"
+        m2.direction = "inbound"
+        self.assertFalse(m1 == m2)
 
 
     def test_serializeByteArray(self):
-        pass
 
 
     def test_deserializeByteArray(self):

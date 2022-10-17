@@ -32,7 +32,7 @@ class TestFuzzFilePrep(unittest.TestCase):
         self.assertNotEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
 
         # cArray
-        prep.INPUT_FILE_PATH = './test/units/input_files/test.cra'
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test.cra'
         prep.processInputFile()
         self.assertNotEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
 
