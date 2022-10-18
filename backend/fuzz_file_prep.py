@@ -71,10 +71,6 @@ def processInputFile():
         exit()
 
     with open(INPUT_FILE_PATH, 'r') as inputFile:
-        # This is a little naive, but it works
-        # These two get recreated frequently
-        message = Message()
-        tempMessageData = ""
 
         
         # Allow combining packets in same direction back-to-back into one message
@@ -111,6 +107,8 @@ def processPcap(inputFile: object):
     serverPort = None
     
     inputData = scapy.all.rdpcap(INPUT_FILE_PATH)
+    message = Message()
+    tempMessageData = ""
 
     j = -1
     for i in range(0, len(inputData)):
