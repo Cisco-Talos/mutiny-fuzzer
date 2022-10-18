@@ -80,8 +80,17 @@ class TestFuzzFilePrep(unittest.TestCase):
         self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[6].direction, "inbound")
         self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[6].subcomponents[0].message, b'\x00\x00\x00\x00')
 
-    @patch('backend.menu_functions.promptInt', return_value=1)
+        # --- TODO: with FORCE_DEFAULTS=false
+
+    @patch('backend.menu_functions.prompt', return_value="tcp")
     def test_genFuzzConfig(self, mock):
+        prep.genFuzzConfig()
+        # check defaults
+        self.assertEqual(prep.FUZZER_DATA.failureThreshold, 3)
+        self.assertEqual(prep.FUZZER_DATA.failureTimeout, 5)
+        self.assertEqual(prep.FUZZER_DATA.proto, "tcp")
+
+
         # --- TODO: with FORCE_DEFAULTS=false
         pass
 

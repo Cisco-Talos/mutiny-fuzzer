@@ -71,18 +71,11 @@ def processInputFile():
         exit()
 
     with open(INPUT_FILE_PATH, 'r') as inputFile:
-
-        
-        # Allow combining packets in same direction back-to-back into one message
-        askedToCombinePackets = False
-        isCombiningPackets = False
-
         print("Processing %s..." % (INPUT_FILE_PATH))
-    
         try:
             processPcap(inputFile) # Process as Pcap preferentially
         except Exception as rdpcap_e:
-            print(ERROR + str(rdpcap_e) + CLEAR)
+            print(WARNING + "Failed to process as PCAP: " +  str(rdpcap_e) + CLEAR)
             print("Processing as c_array...")
             try:
                 processCArray(inputFile)
@@ -109,6 +102,9 @@ def processPcap(inputFile: object):
     inputData = scapy.all.rdpcap(INPUT_FILE_PATH)
     message = Message()
     tempMessageData = ""
+    # Allow combining packets in same direction back-to-back into one message
+    askedToCombinePackets = False
+    isCombiningPackets = False
 
     j = -1
     for i in range(0, len(inputData)):
@@ -199,6 +195,9 @@ def processCArray(inputFile: object):
     global LAST_MESSAGE_DIRECTION, FUZZER_DATA
 
     state = STATE_BETWEEN_MESSAGES # Track what we're looking for
+    # Allow combining packets in same direction back-to-back into one message
+    askedToCombinePackets = False
+    isCombiningPackets = False
 
     i = 0
     for line in inputFile:
@@ -274,9 +273,9 @@ def genFuzzConfig():
     global FUZZER_DATA
 
     # ask how many times we should repeat a failed test, as in one causing a crash
-    FUZZER_DATA.failurethreshold = promptInt("\nhow many times should a test case causing a crash or error be repeated?", defaultResponse=3) if not FORCE_DEFAULTS else 3
+    FUZZER_DATA.failureThreshold = promptInt("\nhow many times should a test case causing a crash or error be repeated?", defaultResponse=3) if not FORCE_DEFAULTS else 3
     # timeout between failure retries
-    FUZZER_DATA.failuretimeout = promptInt("when the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5) if not FORCE_DEFAULTS else 5
+    FUZZER_DATA.failureTimeout = promptInt("when the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5) if not FORCE_DEFAULTS else 5
     # ask if tcp or udp
     FUZZER_DATA.proto = prompt("which protocol?", answers=["tcp", "udp", "layer3" ], defaultIndex=0) if not FORCE_DEFAULTS else "tcp"
 
@@ -290,9 +289,6 @@ def genFuzzConfig():
 
     # port number to connect on
     FUZZER_DATA.port = promptInt("what port should the fuzzer %s?" % ("connect to"), defaultResponse=DEFAULT_PORT) if not FORCE_DEFAULTS else DEFAULT_PORT
-
-    # how many of the messages to output to the .fuzzer
-    default = len(FUZZER_DATA.messageCollection.messages)-1
 
 def writeFuzzerFile():
     '''
