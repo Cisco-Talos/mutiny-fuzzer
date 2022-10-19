@@ -82,17 +82,25 @@ class TestFuzzFilePrep(unittest.TestCase):
 
         # --- TODO: with FORCE_DEFAULTS=false
 
-    @patch('backend.menu_functions.prompt', return_value="tcp")
-    def test_genFuzzConfig(self, mock):
+    def test_genFuzzConfig(self):
+        # with FORCE_DEFAULTS = true
         prep.genFuzzConfig()
-        # check defaults
         self.assertEqual(prep.FUZZER_DATA.failureThreshold, 3)
         self.assertEqual(prep.FUZZER_DATA.failureTimeout, 5)
         self.assertEqual(prep.FUZZER_DATA.proto, "tcp")
 
 
-        # --- TODO: with FORCE_DEFAULTS=false
-        pass
+    '''
+    @patch('backend.menu_functions.promptInt', return_value=3)
+    def test_genFuzzConfigNonDefault(self, mock1):
+        # with FORCE_DEFAULTS = false
+        prep.FORCE_DEFAULTS = False
+        prep.genFuzzConfig()
+        self.assertEqual(prep.FUZZER_DATA.failureThreshold, 3)
+        self.assertEqual(prep.FUZZER_DATA.failureTimeout, 3)
+        self.assertEqual(prep.FUZZER_DATA.proto, "tcp")
+        self.assertEqual(prep.FUZZER_DATA.port, 3)
+    '''
 
     def test_writeFuzzerFile(self):
         # --- TODO: with FORCE_DEFAULTS=false

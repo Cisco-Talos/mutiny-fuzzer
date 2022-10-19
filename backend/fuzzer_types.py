@@ -273,7 +273,7 @@ class MessageCollection(object):
     def __init__(self):
         self.messages = []
     
-    def addMessage(self, message):
+    def addMessage(self, message: Message):
         self.messages.append(message)
     
     def doClientMessagesMatch(self, otherMessageCollection):
@@ -312,20 +312,20 @@ class Logger(object):
     # Store just the data, forget trying to make a Message object
     # With the subcomponents and everything, it just gets weird, 
     # and we don't need it
-    def setReceivedMessageData(self, messageNumber, data):
+    def setReceivedMessageData(self, messageNumber: int, data: object):
         self.receivedMessageData[messageNumber] = data
 
-    def setHighestMessageNumber(self, messageNumber):
+    def setHighestMessageNumber(self, messageNumber: int):
         # The highest message # this fuzz session made it to
         self._highestMessageNumber = messageNumber
 
-    def outputLastLog(self, runNumber, messageCollection, errorMessage):
+    def outputLastLog(self, runNumber: int, messageCollection: MessageCollection, errorMessage: str):
         return self._outputLog(runNumber, messageCollection, errorMessage, self._lastReceivedMessageData, self._lastHighestMessageNumber)
 
-    def outputLog(self, runNumber, messageCollection, errorMessage):
+    def outputLog(self, runNumber: int, messageCollection: MessageCollection, errorMessage: str):
         return self._outputLog(runNumber, messageCollection, errorMessage, self.receivedMessageData, self._highestMessageNumber)
 
-    def _outputLog(self, runNumber, messageCollection, errorMessage, receivedMessageData, highestMessageNumber):
+    def _outputLog(self, runNumber: int, messageCollection: MessageCollection, errorMessage: str, receivedMessageData: object, highestMessageNumber: int):
         with open(os.path.join(self._folderPath, str(runNumber)), "w") as outputFile:
             print("Logging run number %d" % (runNumber))
             outputFile.write("Log from run with seed %d\n" % (runNumber))
@@ -346,7 +346,7 @@ class Logger(object):
                 if i in receivedMessageData:
                     # Compare what was actually sent to what we expected, log if they differ
                     if receivedMessageData[i] != message.getOriginalMessage():
-                        outputFile.write("Actual data received for packet %d: %s" % (i, Message.serializeByteArray(receivedMessageData[i])))
+                        outputFile.write("Actual data received for packet %d: %s\n" % (i, Message.serializeByteArray(receivedMessageData[i])))
                     else:
                         outputFile.write("Received expected data\n")
 
