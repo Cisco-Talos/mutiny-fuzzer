@@ -36,13 +36,6 @@ class TestLogger(unittest.TestCase):
         self.logger.setHighestMessageNumber(43)
         self.assertEqual(self.logger._highestMessageNumber, 43)
 
-    def test_outputLastLog(self):
-        pass
-
-
-    def test_outputLog(self):
-        pass
-
     def test__outputLog(self):
         runNum = 0
         errorMessage =  'this is an error msg'
@@ -124,8 +117,7 @@ class TestLogger(unittest.TestCase):
 
         # test again with 
         # runNum != 0 and highestMessageNumber != -1 
-        # and 
-        # last message direction = outboudn
+        runNum = 1 
 
     def test_resetForNewRun(self):
         # valid attributes

@@ -90,7 +90,7 @@ def processInputFile():
     print(SUCCESS + "Processed input file %s" % (INPUT_FILE_PATH)+ CLEAR)
 
 
-def processPcap(inputFile: object):
+def processPcap(inputFile: object, testPort: int = None, testMac: str = None, combinePackets: bool = None):
     '''
     ingests pcap using scapy and parses client-server communication to populate FUZZER_DATA 
     with message sequences that we can use as a baseline for our fuzzing
@@ -129,9 +129,15 @@ def processPcap(inputFile: object):
                     serverMac = mac2
                 if not FORCE_DEFAULTS: 
                     if not useMacs:
-                        serverPort = int(prompt("Which port is the server listening on?", [str(port2), str(port1)], defaultIndex=0 if port1 > port2 else 1))
+                        if testPort:
+                            serverPort = testPort
+                        else:
+                            serverPort = int(prompt("Which port is the server listening on?", [str(port2), str(port1)], defaultIndex=0 if port1 > port2 else 1))
                     else:
-                        serverMac = prompt("Which mac corresponds to the server?", [str(mac1), str(mac2)], defaultIndex=1)
+                        if testMac:
+                            serverMac = testMac
+                        else:
+                            serverMac = prompt("Which mac corresponds to the server?", [str(mac1), str(mac2)], defaultIndex=1)
 
                 clientPort = port1 if serverPort == port2 else port2
                 if useMacs:
@@ -141,7 +147,6 @@ def processPcap(inputFile: object):
                 print("Error: unknown source port %d - is the capture filtered to a single stream?" % (inputData[i].sport))
             elif inputData[i].dport not in [clientPort, serverPort]:
                 print("Error: unknown destination port %d - is the capture filtered to a single stream?" % (inputData[i].dport))
-            
             if not useMacs:
                 newMessageDirection = Message.Direction.Outbound if inputData[i].sport == clientPort else Message.Direction.Inbound
             else:
@@ -161,8 +166,10 @@ def processPcap(inputFile: object):
                    isCombiningPackets = True 
                    askedToCombinePackets = True
                 if not askedToCombinePackets:
-                    if prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?"):
-                        isCombiningPackets = True
+                    if combinePackets is not None:
+                        isCombiningPackets = combinePackets
+                    else:
+                        isCombiningPackets =  prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
                     askedToCombinePackets = True
                 if isCombiningPackets:
                     message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
@@ -180,7 +187,7 @@ def processPcap(inputFile: object):
             # No payload, keep going (different from empty payload)
             continue
 
-def processCArray(inputFile: object):
+def processCArray(inputFile: object, combinePackets: bool = None):
     '''
     Process and convert c_array into .fuzzer
     This is processing the wireshark syntax looking like:
@@ -194,6 +201,7 @@ def processCArray(inputFile: object):
     '''
     global LAST_MESSAGE_DIRECTION, FUZZER_DATA
 
+    LAST_MESSAGE_DIRECTION = None
     state = STATE_BETWEEN_MESSAGES # Track what we're looking for
     # Allow combining packets in same direction back-to-back into one message
     askedToCombinePackets = False
@@ -234,8 +242,10 @@ def processCArray(inputFile: object):
                     askedToCombinePackets=True
                     isCombiningPackets=True
                 if not askedToCombinePackets:
-                    if prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?"):
-                        isCombiningPackets = True
+                    if combinePackets is not None:
+                        isCombiningPackets = combinePackets
+                    else:
+                        isCombiningPackets = prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
                     askedToCombinePackets = True
                 if isCombiningPackets:
                     message = FUZZER_DATA.messageCollection.messages[-1]
@@ -266,46 +276,51 @@ def processCArray(inputFile: object):
                 LAST_MESSAGE_DIRECTION = message.direction
 
 
-def genFuzzConfig():
+def genFuzzConfig(failureThreshold: int = None, failureTimeout: int = None, proto: str = None, l3proto: str = None, l3protoNum: int = None, port: int = None):
     '''
     get fuzzing details 
     '''
     global FUZZER_DATA
 
-    # ask how many times we should repeat a failed test, as in one causing a crash
-    FUZZER_DATA.failureThreshold = promptInt("\nhow many times should a test case causing a crash or error be repeated?", defaultResponse=3) if not FORCE_DEFAULTS else 3
-    # timeout between failure retries
-    FUZZER_DATA.failureTimeout = promptInt("when the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5) if not FORCE_DEFAULTS else 5
-    # ask if tcp or udp
-    FUZZER_DATA.proto = prompt("which protocol?", answers=["tcp", "udp", "layer3" ], defaultIndex=0) if not FORCE_DEFAULTS else "tcp"
+    if FORCE_DEFAULTS:
+        FUZZER_DATA.port = DEFAULT_PORT
+        FUZZER_DATA.failureThreshold = 3
+        FUZZER_DATA.failureTimeout = 5
+        FUZZER_DATA.proto = 'tcp'
+    else:
+        # port number to connect on
+        FUZZER_DATA.port = port if port else promptInt("what port should the fuzzer %s?" % ("connect to"), defaultResponse=DEFAULT_PORT)
+        # ask how many times we should repeat a failed test, as in one causing a crash
+        FUZZER_DATA.failureThreshold = failureThreshold if failureThreshold else promptInt("\nhow many times should a test case causing a crash or error be repeated?", defaultResponse=3)
+        # timeout between failure retries
+        FUZZER_DATA.failureTimeout = failureTimeout if failureTimeout else promptInt("when the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5)
+        # ask if tcp or udp
+        FUZZER_DATA.proto = proto if proto else prompt("which protocol?", answers=["tcp", "udp", "layer3" ], defaultIndex=0)
+        # for finding out which l3 protocol
+        if FUZZER_DATA.proto == "layer3":
+            FUZZER_DATA.proto = l3proto if l3proto else prompt("which layer3 protocol?", answers=["icmp","igmp","ipv4","tcp","igp","udp","ipv6","ipv6-route","ipv6-frag","gre", "dsr","esp","ipv6-icmp","ipv6-nonxt","ipv6-opts","eigrp","ospf","mtp","l2tp","sctp","manual"],defaultIndex=0)
+            # in the case that it's not in the above list
+            if FUZZER_DATA.proto == "manual":
+                FUZZER_DATA.proto = l3protoNum if l3protoNum else promptInt("what is the l3 protocol number?", defaultResponse=0)    
 
-    # for finding out which l3 protocol
-    if FUZZER_DATA.proto == "layer3":
-        FUZZER_DATA.proto = prompt("which layer3 protocol?", answers=["icmp","igmp","ipv4","tcp","igp","udp","ipv6","ipv6-route","ipv6-frag","gre", \
-                                                                     "dsr","esp","ipv6-icmp","ipv6-nonxt","ipv6-opts","eigrp","ospf","mtp","l2tp","sctp","manual"],defaultIndex=0)
-    # in the case that it's not in the above list
-    if FUZZER_DATA.proto == "manual":
-        FUZZER_DATA.proto = promptInt("what is the l3 protocol number?", defaultResponse=0)    
 
-    # port number to connect on
-    FUZZER_DATA.port = promptInt("what port should the fuzzer %s?" % ("connect to"), defaultResponse=DEFAULT_PORT) if not FORCE_DEFAULTS else DEFAULT_PORT
-
-def writeFuzzerFile():
+def writeFuzzerFile(autogen:bool = None):
     '''
-    writes FUZZER_DATA to a new .fuzzer file using promptandoutput()
+    writes FUZZER_DATA to a new .fuzzer file using promptAndOutput()
     '''
     # see if they'd like us to just rip out a .fuzzer per client message
     # default to no
-    if prompt("\nwould you like to auto-generate a .fuzzer for each client message?", defaultIndex=1):
-        promptandoutput(getnextmessage(0, Message.Direction.Outbound), autogenerateallclient=True)
+    autogen = autogen if autogen is not None else prompt("\nwould you like to auto-generate a .fuzzer for each client message?", defaultIndex=1)
+    if autogen:
+        promptAndOutput(getnextmessage(0, Message.Direction.Outbound), autogenerateallclient=True)
     else:
         # always run once
-        outputmessagenum = promptandoutput(getnextmessage(0, Message.Direction.Outbound))
+        outputmessagenum = promptAndOutput(getnextmessage(0, Message.Direction.Outbound))
 
         # allow creating multiple .fuzzers afterwards
         if not FORCE_DEFAULTS:
             while prompt("\ndo you want to generate a .fuzzer for another message number?", defaultIndex=1):
-                outputmessagenum = promptandoutput(outputmessagenum)
+                outputmessagenum = promptAndOutput(outputmessagenum)
     print(SUCCESS + "all files have been written." + CLEAR)
 
 
@@ -325,7 +340,7 @@ def getnextmessage(startmessage, messagedirection):
     
     return none
 
-def promptandoutput(outputmessagenum: int, autogenerateallclient: bool = False):
+def promptAndOutput(outputmessagenum: int, autogenerateallclient: bool = False):
     '''
     prompt for .fuzzer-specific questions and write file (calls above function)
     allows us to let the user crank out a bunch of .fuzzer files quickly
@@ -372,7 +387,7 @@ def promptandoutput(outputmessagenum: int, autogenerateallclient: bool = False):
         nextmessage = getnextmessage(outputmessagenum+1, message.direction.outbound)
         # will return none when we're out of messages to auto-output
         if nextmessage:
-            promptandoutput(nextmessage, autogenerateallclient=True)
+            promptAndOutput(nextmessage, autogenerateallclient=True)
     return finalMessageNum
 
 

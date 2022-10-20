@@ -13,27 +13,27 @@ class TestFuzzFilePrep(unittest.TestCase):
         prep.FORCE_DEFAULTS = True
 
 
-    # TODO: annotate with expected fail
-    '''
-    def test_processInputFileExpectedFails(self):
+    def test_processInputFileNonExistent(self):
         # nonexistent file
         prep.INPUT_FILE_PATH = 'non-existent.file'
-        prep.processInputFile()
-        self.assertEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
-        
+        with self.assertRaises(SystemExit) as contextManager:
+            prep.processInputFile()
+            self.assertEqual(contextManager.exception.code, 3)
+
+    def test_processInputfileInvalidType(self):
         # non-pcap/cArray file
         prep.INPUT_FILE_PATH = 'input_files/test.nonvalid'
-        prep.processInputFile()
-        self.assertEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
+        with self.assertRaises(SystemExit) as contextManager: 
+            prep.processInputFile()
+            self.assertEqual(contextManager.exception.code, 3)
 
-    '''
 
-
-    @patch('backend.menu_functions.prompt', return_value=True)
-    def test_processPcap(self, mock):
+    def test_processPcap(self):
         # pcap
         prep.INPUT_FILE_PATH = './tests/units/input_files/test0.pcap'
-        prep.processInputFile()
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processPcap(inputFile)
+        inputFile.close()
 
         self.assertNotEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
         self.assertEqual(prep.DEFAULT_PORT, 9999)
@@ -44,16 +44,46 @@ class TestFuzzFilePrep(unittest.TestCase):
 
         self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[1].direction, "inbound")
         self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[1].subcomponents[0].message, b'[^.^] Launching 4321 testcases for pid 4321')
-        # --- TODO: with FORCE_DEFAULTS=false
+
+    def test_processPcapNonDefault(self):
+        prep.FORCE_DEFAULTS = False
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test0.pcap'
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processPcap(inputFile, testPort=9999,combinePackets=True)
+        inputFile.close()
+
+        self.assertEqual(prep.DEFAULT_PORT, 9999)
+        self.assertEqual(prep.LAST_MESSAGE_DIRECTION, "inbound")
+        # --- checking message contents
+        self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[0].direction, "outbound")
+        self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[0].subcomponents[0].message, b'1234.4321')
+
+        self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[1].direction, "inbound")
+        self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[1].subcomponents[0].message, b'[^.^] Launching 4321 testcases for pid 4321')
+
+    def test_processPcapNonDefaultSamePorts(self):
+        # --- TODO: create a pcap with hosts connecting via same port so testMac can be used to verify stability
+        prep.FORCE_DEFAULTS = False
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test0.pcap' # FIXME: change to pcap with same ports for both client/server
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processPcap(inputFile, testPort=55161,combinePackets=True)
+        inputFile.close()
+        pass
+    
+    def test_processPcapNonDefaultDontCombine(self):
+        prep.FORCE_DEFAULTS = False
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test0.pcap' # FIXME: change to pcap with multiple consecutive inbound/outbounds
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processPcap(inputFile, testPort=55161,combinePackets=False)
+        inputFile.close()
 
 
-
-
-    @patch('backend.menu_functions.prompt', return_value=True)
-    def test_processCArray(self, mock):
+    def test_processCArray(self):
         # cArray
         prep.INPUT_FILE_PATH = './tests/units/input_files/test0.cra'
-        prep.processInputFile()
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processCArray(inputFile)
+        inputFile.close()
 
         self.assertNotEqual(len(prep.FUZZER_DATA.messageCollection.messages), 0)
         self.assertEqual(prep.LAST_MESSAGE_DIRECTION, "inbound")
@@ -80,37 +110,57 @@ class TestFuzzFilePrep(unittest.TestCase):
         self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[6].direction, "inbound")
         self.assertEqual(prep.FUZZER_DATA.messageCollection.messages[6].subcomponents[0].message, b'\x00\x00\x00\x00')
 
-        # --- TODO: with FORCE_DEFAULTS=false
+    def test_processCArrayNonDefault(self):
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test0.cra' # FIXME: change this to a cArray with multiple consecutive outbound/inbounds
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processCArray(inputFile, combinePackets = False)
+        inputFile.close()
+        # TODO: complete with asserts based on new cArray
 
     def test_genFuzzConfig(self):
-        # with FORCE_DEFAULTS = true
         prep.genFuzzConfig()
         self.assertEqual(prep.FUZZER_DATA.failureThreshold, 3)
         self.assertEqual(prep.FUZZER_DATA.failureTimeout, 5)
         self.assertEqual(prep.FUZZER_DATA.proto, "tcp")
 
 
-    '''
-    @patch('backend.menu_functions.promptInt', return_value=3)
-    def test_genFuzzConfigNonDefault(self, mock1):
+    def test_genFuzzConfigNonDefault(self):
         # with FORCE_DEFAULTS = false
         prep.FORCE_DEFAULTS = False
-        prep.genFuzzConfig()
-        self.assertEqual(prep.FUZZER_DATA.failureThreshold, 3)
-        self.assertEqual(prep.FUZZER_DATA.failureTimeout, 3)
-        self.assertEqual(prep.FUZZER_DATA.proto, "tcp")
-        self.assertEqual(prep.FUZZER_DATA.port, 3)
-    '''
+        prep.genFuzzConfig(failureThreshold=4, failureTimeout=4, proto='udp',port=30)
+        self.assertEqual(prep.FUZZER_DATA.failureThreshold, 4)
+        self.assertEqual(prep.FUZZER_DATA.failureTimeout, 4)
+        self.assertEqual(prep.FUZZER_DATA.proto, "udp")
+        self.assertEqual(prep.FUZZER_DATA.port, 30)
+
+    def test_genFuzzConfigNonDefaultl3(self):
+        prep.FORCE_DEFAULTS = False
+        prep.genFuzzConfig(failureThreshold=4, failureTimeout=4, proto='layer3',l3proto='icmp', port=30)
+        self.assertEqual(prep.FUZZER_DATA.failureThreshold, 4)
+        self.assertEqual(prep.FUZZER_DATA.failureTimeout, 4)
+        self.assertEqual(prep.FUZZER_DATA.proto, "icmp")
+        self.assertEqual(prep.FUZZER_DATA.port, 30)
+
+    def test_genFuzzConfigNonDefaultNonStdl3(self):
+        prep.FORCE_DEFAULTS = False
+        prep.genFuzzConfig(failureThreshold=4, failureTimeout=4, proto='layer3', l3proto='manual', l3protoNum = 50, port=30)
+        self.assertEqual(prep.FUZZER_DATA.failureThreshold, 4)
+        self.assertEqual(prep.FUZZER_DATA.failureTimeout, 4)
+        self.assertEqual(prep.FUZZER_DATA.proto, 50)
+        self.assertEqual(prep.FUZZER_DATA.port, 30)
 
     def test_writeFuzzerFile(self):
-        # --- TODO: with FORCE_DEFAULTS=false
+        pass
+
+    def test_writeFuzzerFileNonDefault(self):
         pass
 
     def test_getNextMessage(self):
-        # --- TODO: with FORCE_DEFAULTS=false
         pass
 
     def test_promptAndOutput(self):
-        # --- TODO: with FORCE_DEFAULTS=false
+        pass
+
+    def test_promptAndOutputNonDefault(self):
         pass
 
