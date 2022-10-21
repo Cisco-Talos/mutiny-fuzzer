@@ -586,6 +586,7 @@ def parsePrepArgs(parser):
     parser.add_argument("-d","--processor_dir", help = "Location of custom pcap Message/exception/log/monitor processors if any, see appropriate *processor.py source in ./mutiny_classes/ for implementation details", nargs=1, default=["default"])
     parser.add_argument("-a", "--dump_ascii", help="Dump the ascii output from packets ", action="store_true", default=False)
     parser.add_argument("-f", "--force", help="Take all default options", action = "store_true", default=False) 
+    parser.add_argument("-l", "--layer", help="OSI layer to read from PCAP, 2 through 4", default=4)
     parser.set_defaults(func=prep)
     
 def parseArguments():
