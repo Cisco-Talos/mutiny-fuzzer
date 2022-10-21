@@ -180,6 +180,7 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
             message.direction = newMessageDirection
             LAST_MESSAGE_DIRECTION = newMessageDirection
             message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
+            print('new message!!!')
             FUZZER_DATA.messageCollection.addMessage(message)
             j += 1
             print(SUCCESS + "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction) + CLEAR)
@@ -276,7 +277,7 @@ def processCArray(inputFile: object, combinePackets: bool = None):
                 LAST_MESSAGE_DIRECTION = message.direction
 
 
-def genFuzzConfig(failureThreshold: int = None, failureTimeout: int = None, proto: str = None, l3proto: str = None, l3protoNum: int = None, port: int = None):
+def genFuzzConfig(failureThreshold: int = None, failureTimeout: int = None, proto: str = None, port: int = None):
     '''
     get fuzzing details 
     '''
@@ -294,14 +295,8 @@ def genFuzzConfig(failureThreshold: int = None, failureTimeout: int = None, prot
         FUZZER_DATA.failureThreshold = failureThreshold if failureThreshold else promptInt("\nhow many times should a test case causing a crash or error be repeated?", defaultResponse=3)
         # timeout between failure retries
         FUZZER_DATA.failureTimeout = failureTimeout if failureTimeout else promptInt("when the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5)
-        # ask if tcp or udp
-        FUZZER_DATA.proto = proto if proto else prompt("which protocol?", answers=["tcp", "udp", "layer3" ], defaultIndex=0)
-        # for finding out which l3 protocol
-        if FUZZER_DATA.proto == "layer3":
-            FUZZER_DATA.proto = l3proto if l3proto else prompt("which layer3 protocol?", answers=["icmp","igmp","ipv4","tcp","igp","udp","ipv6","ipv6-route","ipv6-frag","gre", "dsr","esp","ipv6-icmp","ipv6-nonxt","ipv6-opts","eigrp","ospf","mtp","l2tp","sctp","manual"],defaultIndex=0)
-            # in the case that it's not in the above list
-            if FUZZER_DATA.proto == "manual":
-                FUZZER_DATA.proto = l3protoNum if l3protoNum else promptInt("what is the l3 protocol number?", defaultResponse=0)    
+        # ask if tcp, udp, or raw sockets (l2)
+        FUZZER_DATA.proto = proto if proto else prompt("which protocol?", answers=["tcp", "udp", "raw" ], defaultIndex=0)
 
 
 def writeFuzzerFile(autogen:bool = None):
@@ -312,82 +307,86 @@ def writeFuzzerFile(autogen:bool = None):
     # default to no
     autogen = autogen if autogen is not None else prompt("\nwould you like to auto-generate a .fuzzer for each client message?", defaultIndex=1)
     if autogen:
-        promptAndOutput(getnextmessage(0, Message.Direction.Outbound), autogenerateallclient=True)
+        promptAndOutput(getNextMessage(0, Message.Direction.Outbound), autoGenerateAllClient=True)
     else:
         # always run once
-        outputmessagenum = promptAndOutput(getnextmessage(0, Message.Direction.Outbound))
+        outputMessageNum = promptAndOutput(getNextMessage(0, Message.Direction.Outbound))
 
         # allow creating multiple .fuzzers afterwards
         if not FORCE_DEFAULTS:
             while prompt("\ndo you want to generate a .fuzzer for another message number?", defaultIndex=1):
-                outputmessagenum = promptAndOutput(outputmessagenum)
+                outputMessageNum = promptAndOutput(outputMessageNum)
     print(SUCCESS + "all files have been written." + CLEAR)
 
 
-def getnextmessage(startmessage, messagedirection):
+def getNextMessage(startMessage: int, messageDirection: Message.Direction):
     '''
     helper function to get next message from either client or server
     inclusive (if startmessage is fromclient and so is direction,
     will return startmessage)
     returns message number or none if no messages remain
     '''
-    i = startmessage
+    i = startMessage
     
     while i < len(FUZZER_DATA.messageCollection.messages):
-        if FUZZER_DATA.messageCollection.messages[i].direction == messagedirection:
+        if FUZZER_DATA.messageCollection.messages[i].direction == messageDirection:
             return i
         i += 1
     
-    return none
+    return None
 
-def promptAndOutput(outputmessagenum: int, autogenerateallclient: bool = False):
+def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, finalMsgNum: int = None, msgsToFuzz: str = None):
     '''
     prompt for .fuzzer-specific questions and write file (calls above function)
     allows us to let the user crank out a bunch of .fuzzer files quickly
-    outputmessagenum is the highest message output last time, if they're creating multiple .fuzzer files
-    autogenerateallclient will make a .fuzzer file per client automatically
+    outputMessageNum is the highest message output last time, if they're creating multiple .fuzzer files
+    autoGenerateAllClient will make a .fuzzer file per client automatically
     '''
     global FUZZER_DATA
     # how many of the messages to output to the .fuzzer
-    if FORCE_DEFAULTS or autogenerateallclient:
-        finalMessageNum = len(FUZZER_DATA.messageCollection.messages)-1
+    if FORCE_DEFAULTS or autoGenerateAllClient:
+        finalMessageNum = len(FUZZER_DATA.messageCollection.messages) - 1
     else:
-        finalMessageNum = promptInt("what is the last message number you want output?", defaultResponse=len(FUZZER_DATA.messageCollection.messages)-1)
+        finalMessageNum = finalMsgNum if finalMsgNum else promptInt("what is the last message number you want output?", defaultResponse=len(FUZZER_DATA.messageCollection.messages)-1)
 
     # any messages previously marked for fuzzing, unmark first
     # inefficient as can be, but who cares
     for message in FUZZER_DATA.messageCollection.messages:
         if message.isFuzzed:
-            message.isFuzzed = false
+            message.isFuzzed = False
             for subcomponent in message.subcomponents:
-                subcomponent.isFuzzed = false
+                subcomponent.isFuzzed = False
     
-    if not autogenerateallclient:
-        while True:
-            tmp = promptString("which message numbers should be fuzzed? valid: 0-%d" % (finalMessageNum),defaultResponse=str(outputmessagenum),validateFunc=validateNumberRange)
-            if len(tmp) > 0:
-                outputfilenameend = tmp
-                for messageindex in validateNumberRange(tmp, flattenList=True):
-                    FUZZER_DATA.messageCollection.messages[messageindex].isFuzzed = True
-                    for subcomponent in FUZZER_DATA.messageCollection.messages[messageindex].subcomponents:
-                        subcomponent.isFuzzed = True
-                break
+    if not autoGenerateAllClient:
+        messagesToFuzz = ''
+        while len(messagesToFuzz) <= 0 or len(messagesToFuzz) > finalMessageNum:
+            messagesToFuzz = msgsToFuzz if msgsToFuzz else promptString("which message numbers should be fuzzed? valid: 0-%d" % (finalMessageNum),defaultResponse=str(outputMessageNum),validateFunc=validateNumberRange)
+
+        # len of messagesToFuzz must now be between 0 and finalMessageNum
+        outputFileNameEnd = messagesToFuzz
+        # iterate through messages and set .isFuzzed on subcomponents
+        for messageIndex in validateNumberRange(messagesToFuzz, flattenList=True):
+            FUZZER_DATA.messageCollection.messages[messageIndex].isFuzzed = True
+            for subcomponent in FUZZER_DATA.messageCollection.messages[messageIndex].subcomponents:
+                subcomponent.isFuzzed = True
     else:
-        outputfilenameend = str(outputmessagenum)
-        FUZZER_DATA.messageCollection.messages[outputmessagenum].isFuzzed = True
-        for subcomponent in FUZZER_DATA.messageCollection.messages[outputmessagenum].subcomponents:
+        outputFileNameEnd = str(outputMessageNum)
+        # set message at outputMessageNum and all subcomponents .isFuzzed to true
+        FUZZER_DATA.messageCollection.messages[outputMessageNum].isFuzzed = True
+        for subcomponent in FUZZER_DATA.messageCollection.messages[outputMessageNum].subcomponents:
             subcomponent.isFuzzed = True
 
-
-    outputfilepath = "{0}-{1}.fuzzer".format(os.path.splitext(INPUT_FILE_PATH)[0], outputfilenameend)
+    # write out .fuzzer file
+    outputfilepath = "{0}-{1}.fuzzer".format(os.path.splitext(INPUT_FILE_PATH)[0], outputFileNameEnd)
     actualpath = FUZZER_DATA.writeToFile(outputfilepath, defaultComments=True, finalMessageNum=finalMessageNum)
     print(SUCCESS + "wrote .fuzzer file: {0}".format(actualpath) + CLEAR)
     
-    if autogenerateallclient:
-        nextmessage = getnextmessage(outputmessagenum+1, message.direction.outbound)
+    # if we are fuzzing all client messages, continue to recursively call promptAndOutput for next message
+    if autoGenerateAllClient:
+        nextmessage = getNextMessage(outputMessageNum + 1, Message.Direction.Outbound)
         # will return none when we're out of messages to auto-output
         if nextmessage:
-            promptAndOutput(nextmessage, autogenerateallclient=True)
+            promptAndOutput(nextmessage, autoGenerateAllClient=True)
     return finalMessageNum
 
 

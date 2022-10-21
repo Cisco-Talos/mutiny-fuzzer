@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 import backend.fuzz_file_prep as prep
 from backend.fuzzer_data import FuzzerData
+from backend.fuzzer_types import Message
 
 
 
@@ -12,6 +13,8 @@ class TestFuzzFilePrep(unittest.TestCase):
         prep.FUZZER_DATA.processorDirectory = 'default'
         prep.FORCE_DEFAULTS = True
 
+    def tearDown(self):
+        prep.LAST_MESSAGE_DIRECTION = None
 
     def test_processInputFileNonExistent(self):
         # nonexistent file
@@ -133,21 +136,15 @@ class TestFuzzFilePrep(unittest.TestCase):
         self.assertEqual(prep.FUZZER_DATA.proto, "udp")
         self.assertEqual(prep.FUZZER_DATA.port, 30)
 
-    def test_genFuzzConfigNonDefaultl3(self):
+    def test_genFuzzConfigNonDefaultRaw(self):
+        # with FORCE_DEFAULTS = false
         prep.FORCE_DEFAULTS = False
-        prep.genFuzzConfig(failureThreshold=4, failureTimeout=4, proto='layer3',l3proto='icmp', port=30)
+        prep.genFuzzConfig(failureThreshold=4, failureTimeout=4, proto='raw',port=30)
         self.assertEqual(prep.FUZZER_DATA.failureThreshold, 4)
         self.assertEqual(prep.FUZZER_DATA.failureTimeout, 4)
-        self.assertEqual(prep.FUZZER_DATA.proto, "icmp")
+        self.assertEqual(prep.FUZZER_DATA.proto, "raw")
         self.assertEqual(prep.FUZZER_DATA.port, 30)
 
-    def test_genFuzzConfigNonDefaultNonStdl3(self):
-        prep.FORCE_DEFAULTS = False
-        prep.genFuzzConfig(failureThreshold=4, failureTimeout=4, proto='layer3', l3proto='manual', l3protoNum = 50, port=30)
-        self.assertEqual(prep.FUZZER_DATA.failureThreshold, 4)
-        self.assertEqual(prep.FUZZER_DATA.failureTimeout, 4)
-        self.assertEqual(prep.FUZZER_DATA.proto, 50)
-        self.assertEqual(prep.FUZZER_DATA.port, 30)
 
     def test_writeFuzzerFile(self):
         pass
@@ -156,10 +153,31 @@ class TestFuzzFilePrep(unittest.TestCase):
         pass
 
     def test_getNextMessage(self):
-        pass
+        prep.FUZZER_DATA = FuzzerData()
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test0.cra'
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processCArray(inputFile)
+        inputFile.close()
+        self.assertEqual(prep.getNextMessage(0, Message.Direction.Inbound), 0)
+        self.assertEqual(prep.getNextMessage(0, Message.Direction.Outbound), 1)
+        self.assertEqual(prep.getNextMessage(3, Message.Direction.Inbound), 4)
+        self.assertEqual(prep.getNextMessage(3, Message.Direction.Outbound), 3)
+        self.assertEqual(prep.getNextMessage(6, Message.Direction.Outbound), None)
+
 
     def test_promptAndOutput(self):
-        pass
+        prep.FUZZER_DATA = FuzzerData()
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test0.pcap'
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processPcap(inputFile)
+        inputFile.close()
+        # FUZZER_DATA has been generated, now we can run prompt and output 
+        outputMessageNum = prep.getNextMessage(0,Message.Direction.Outbound)
+        prep.promptAndOutput(prep.getNextMessage(outputMessageNum, autoGenerateAllClient=True))
+        # TODO: find a way to get the actualpath from the prep.promptAndOutput function to validate the file contents
+
+
+        
 
     def test_promptAndOutputNonDefault(self):
         pass
