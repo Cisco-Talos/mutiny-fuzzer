@@ -1,7 +1,7 @@
 import unittest
 from backend.fuzzer_data import FuzzerData
 
-class FuzzerDataTestCase(unittest.TestCase):
+class FuzzerDataTests(unittest.TestCase):
 
     def setUp(self):
         self.fuzzdata = FuzzerData()
@@ -27,13 +27,55 @@ class FuzzerDataTestCase(unittest.TestCase):
         pass
 
     def test__pushComments(self):
-        pass
+        commentSectionName = "processor_dir"
+        comment = 'test'
+        self.fuzzdata._readComments = comment
+        self.fuzzdata._pushComments(commentSectionName)
+        self.assertEqual(self.fuzzdata.comments[commentSectionName], comment)
+        self.assertEqual(self.fuzzdata._readComments, '')
+
+    def test_pushCommentsEmpty(self):
+        # empty _readComments
+        commentSectionName = "processor_dir"
+        self.fuzzdata._pushComments(commentSectionName)
+        self.assertEqual(self.fuzzdata.comments[commentSectionName], '')
+        self.assertEqual(self.fuzzdata._readComments, '')
 
     def test__appendComments(self):
-        pass
+        commentSectionName = "processor_dir"
+        comment = 'test'
+        # key exists, appending to empty string
+        self.fuzzdata._readComments = comment
+        self.fuzzdata._pushComments(commentSectionName)
+        self.fuzzdata._appendComments(commentSectionName)
+        self.assertEqual(self.fuzzdata.comments[commentSectionName], comment)
+        self.assertEqual(self.fuzzdata._readComments, '')
+        # key exists, appending to non empty string
+        self.fuzzdata._readComments = comment
+        self.fuzzdata._appendComments(commentSectionName)
+        self.assertEqual(self.fuzzdata.comments[commentSectionName], 'test' + comment)
+        self.assertEqual(self.fuzzdata._readComments, '')
+
+        # key does not exist
+        commentSectionName = 'notasection'
+        self.fuzzdata._readComments = comment
+        self.fuzzdata._appendComments(commentSectionName)
+        self.assertEqual(self.fuzzdata.comments[commentSectionName], comment)
+        self.assertEqual(self.fuzzdata._readComments, '')
 
     def test_readFromFD(self):
-        pass
+        file = open('./tests/units/input_files/test_FuzzDataRead.fuzzer', 'r')
+        fileno = file.fileno()
+        self.fuzzdata.readFromFD(file)
+        file.close()
+        self.assertEqual(self.fuzzdata.messageCollection.messages[0].subcomponents[0].message, bytearray(b'RFB 003.008\n'))
+        self.assertEqual(self.fuzzdata.processorDirectory, 'default')
+        self.assertEqual(self.fuzzdata.failureThreshold, 3)
+        self.assertEqual(self.fuzzdata.failureTimeout, 3)
+        self.assertEqual(self.fuzzdata.receiveTimeout, 3)
+
+
+
     
     def test__getComments(self):
         pass

@@ -209,9 +209,11 @@ class FuzzerData(object):
         # Catch any comments below the last line
         self._pushComments("endcomments")
                         
-    # Utility function to get comments for a section after checking if they exist
-    # If not, returns ""
     def _getComments(self, commentSectionName):
+        '''
+        Utility function to get comments for a section after checking if they exist
+        If not, returns ""
+        '''
         if commentSectionName in self.comments:
             return self.comments[commentSectionName]
         else:
