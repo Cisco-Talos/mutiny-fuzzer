@@ -180,7 +180,6 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
             message.direction = newMessageDirection
             LAST_MESSAGE_DIRECTION = newMessageDirection
             message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
-            print('new message!!!')
             FUZZER_DATA.messageCollection.addMessage(message)
             j += 1
             print(SUCCESS + "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction) + CLEAR)
@@ -271,7 +270,7 @@ def processCArray(inputFile: object, combinePackets: bool = None):
                     message.appendMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), False, createNewSubcomponent=False)
                     print("\tMessage #%d - Added %d new bytes %s" % (i, len(messageArray), message.direction))
                 if DUMP_ASCII:
-                    print("\tascii: %s" % (str(message.getoriginalmessage())))
+                    print("\tAscii: %s" % (str(message.getoriginalmessage())))
                 i += 1
                 state = STATE_BETWEEN_MESSAGES
                 LAST_MESSAGE_DIRECTION = message.direction
@@ -290,14 +289,19 @@ def genFuzzConfig(failureThreshold: int = None, failureTimeout: int = None, prot
         FUZZER_DATA.proto = 'tcp'
     else:
         # port number to connect on
-        FUZZER_DATA.port = port if port else promptInt("what port should the fuzzer %s?" % ("connect to"), defaultResponse=DEFAULT_PORT)
+        FUZZER_DATA.port = port if port else promptInt("What port should the fuzzer %s?" % ("connect to"), defaultResponse=DEFAULT_PORT)
         # ask how many times we should repeat a failed test, as in one causing a crash
-        FUZZER_DATA.failureThreshold = failureThreshold if failureThreshold else promptInt("\nhow many times should a test case causing a crash or error be repeated?", defaultResponse=3)
+        FUZZER_DATA.failureThreshold = failureThreshold if failureThreshold else promptInt("\nHow many times should a test case causing a crash or error be repeated?", defaultResponse=3)
         # timeout between failure retries
-        FUZZER_DATA.failureTimeout = failureTimeout if failureTimeout else promptInt("when the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5)
+        FUZZER_DATA.failureTimeout = failureTimeout if failureTimeout else promptInt("When the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5)
         # ask if tcp, udp, or raw sockets (l2)
-        FUZZER_DATA.proto = proto if proto else prompt("which protocol?", answers=["tcp", "udp", "raw" ], defaultIndex=0)
+        FUZZER_DATA.proto = proto if proto else prompt("Which protocol?", answers=["tcp", "udp", "raw" ], defaultIndex=0)
 
+    if FUZZER_DATA.port == None:
+        # address case where CArray does not set default port
+        FUZZER_DATA.port = -1
+        while(FUZZER_DATA.port <= 0 or FUZZER_DATA.port >= 65535):
+            FUZZER_DATA.port = promptInt("What port should the fuzzer %s?" % ("connect to"))
 
 def writeFuzzerFile(autogen:bool = None):
     '''
@@ -305,7 +309,7 @@ def writeFuzzerFile(autogen:bool = None):
     '''
     # see if they'd like us to just rip out a .fuzzer per client message
     # default to no
-    autogen = autogen if autogen is not None else prompt("\nwould you like to auto-generate a .fuzzer for each client message?", defaultIndex=1)
+    autogen = autogen if autogen is not None else prompt("\nWould you like to auto-generate a .fuzzer for each client message?", defaultIndex=1)
     if autogen:
         promptAndOutput(getNextMessage(0, Message.Direction.Outbound), autoGenerateAllClient=True)
     else:
@@ -314,9 +318,9 @@ def writeFuzzerFile(autogen:bool = None):
 
         # allow creating multiple .fuzzers afterwards
         if not FORCE_DEFAULTS:
-            while prompt("\ndo you want to generate a .fuzzer for another message number?", defaultIndex=1):
+            while prompt("\nDo you want to generate a .fuzzer for another message number?", defaultIndex=1):
                 outputMessageNum = promptAndOutput(outputMessageNum)
-    print(SUCCESS + "all files have been written." + CLEAR)
+    print(SUCCESS + "All files have been written." + CLEAR)
 
 
 def getNextMessage(startMessage: int, messageDirection: Message.Direction):
@@ -347,7 +351,7 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     if FORCE_DEFAULTS or autoGenerateAllClient:
         finalMessageNum = len(FUZZER_DATA.messageCollection.messages) - 1
     else:
-        finalMessageNum = finalMsgNum if finalMsgNum else promptInt("what is the last message number you want output?", defaultResponse=len(FUZZER_DATA.messageCollection.messages)-1)
+        finalMessageNum = finalMsgNum if finalMsgNum else promptInt("What is the last message number you want output?", defaultResponse=len(FUZZER_DATA.messageCollection.messages)-1)
 
     # any messages previously marked for fuzzing, unmark first
     # inefficient as can be, but who cares
@@ -360,7 +364,7 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     if not autoGenerateAllClient:
         messagesToFuzz = ''
         while len(messagesToFuzz) <= 0 or len(messagesToFuzz) > finalMessageNum:
-            messagesToFuzz = msgsToFuzz if msgsToFuzz else promptString("which message numbers should be fuzzed? valid: 0-%d" % (finalMessageNum),defaultResponse=str(outputMessageNum),validateFunc=validateNumberRange)
+            messagesToFuzz = msgsToFuzz if msgsToFuzz else promptString("Which message numbers should be fuzzed? valid: 0-%d" % (finalMessageNum),defaultResponse=str(outputMessageNum),validateFunc=validateNumberRange)
 
         # len of messagesToFuzz must now be between 0 and finalMessageNum
         outputFileNameEnd = messagesToFuzz
@@ -379,7 +383,7 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     # write out .fuzzer file
     outputfilepath = "{0}-{1}.fuzzer".format(os.path.splitext(INPUT_FILE_PATH)[0], outputFileNameEnd)
     actualpath = FUZZER_DATA.writeToFile(outputfilepath, defaultComments=True, finalMessageNum=finalMessageNum)
-    print(SUCCESS + "wrote .fuzzer file: {0}".format(actualpath) + CLEAR)
+    print(SUCCESS + "Wrote .fuzzer file: {0}".format(actualpath) + CLEAR)
     
     # if we are fuzzing all client messages, continue to recursively call promptAndOutput for next message
     if autoGenerateAllClient:

@@ -1,4 +1,5 @@
 import unittest
+import os
 from unittest.mock import patch
 import backend.fuzz_file_prep as prep
 from backend.fuzzer_data import FuzzerData
@@ -15,6 +16,11 @@ class TestFuzzFilePrep(unittest.TestCase):
 
     def tearDown(self):
         prep.LAST_MESSAGE_DIRECTION = None
+
+        if os.path.exists('tests/units/input_files/test0-0.fuzzer'):
+            os.remove('tests/units/input_files/test0-0.fuzzer')
+        if os.path.exists('tests/units/input_files/test0-0,2-4.fuzzer'):
+            os.remove('tests/units/input_files/test0-0,2-4.fuzzer')
 
     def test_processInputFileNonExistent(self):
         # nonexistent file
@@ -146,12 +152,6 @@ class TestFuzzFilePrep(unittest.TestCase):
         self.assertEqual(prep.FUZZER_DATA.port, 30)
 
 
-    def test_writeFuzzerFile(self):
-        pass
-
-    def test_writeFuzzerFileNonDefault(self):
-        pass
-
     def test_getNextMessage(self):
         prep.FUZZER_DATA = FuzzerData()
         prep.INPUT_FILE_PATH = './tests/units/input_files/test0.cra'
@@ -171,14 +171,77 @@ class TestFuzzFilePrep(unittest.TestCase):
         with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
             prep.processPcap(inputFile)
         inputFile.close()
+        # with Defaults
+        prep.genFuzzConfig()
         # FUZZER_DATA has been generated, now we can run prompt and output 
         outputMessageNum = prep.getNextMessage(0,Message.Direction.Outbound)
-        prep.promptAndOutput(prep.getNextMessage(outputMessageNum, autoGenerateAllClient=True))
-        # TODO: find a way to get the actualpath from the prep.promptAndOutput function to validate the file contents
+        prep.promptAndOutput(outputMessageNum, autoGenerateAllClient=True)
+        with open('tests/units/input_files/test0-0.fuzzer', 'r') as file:
+            lines = file.readlines()
+            for i in range(0, len(lines)):
+                line = lines[i]
+                if i == 4:
+                    self.assertIn('processor_dir default', line)
+                if i == 6:
+                    self.assertIn('failureThreshold 3', line)
+                if i == 8:
+                    self.assertIn('failureTimeout 5', line)
+                if i == 10:
+                    self.assertIn('receiveTimeout 1.0', line)
+                if i == 12:
+                    self.assertIn('shouldPerformTestRun 1', line)
+                if i == 14:
+                    self.assertIn('proto tcp', line)
+                if i == 16:
+                    self.assertIn('port 9999', line)
+                if i == 18:
+                    self.assertIn('sourcePort -1', line)
+                if i == 20:
+                    self.assertIn('sourceIP 0.0.0.0', line)
+                if i == 24:
+                    self.assertIn('outbound fuzz \'1234.4321\'', line)
+                if i == 25:
+                    self.assertIn('inbound \'[^.^] Launching 4321 testcases for pid 4321\'', line)
 
 
-        
 
     def test_promptAndOutputNonDefault(self):
-        pass
+        prep.FUZZER_DATA = FuzzerData()
+        prep.INPUT_FILE_PATH = './tests/units/input_files/test0.cra'
+        with open(prep.INPUT_FILE_PATH, 'r') as inputFile:
+            prep.processCArray(inputFile)
+        inputFile.close()
+        # with Defaults
+        prep.genFuzzConfig()
+        prep.FORCE_DEFAULTS = False
+        # FUZZER_DATA has been generated, now we can run prompt and output 
+        outputMessageNum = prep.getNextMessage(0,Message.Direction.Outbound)
+        prep.promptAndOutput(outputMessageNum, finalMsgNum=6, msgsToFuzz='0,2-4')
+        with open('tests/units/input_files/test0-0,2-4.fuzzer', 'r') as file:
+            lines = file.readlines()
+            print(''.join(lines))
+            for i in range(0, len(lines)):
+                line = lines[i]
+                if i == 4:
+                    self.assertIn('processor_dir default', line)
+                if i == 6:
+                    self.assertIn('failureThreshold 3', line)
+                if i == 8:
+                    self.assertIn('failureTimeout 5', line)
+                if i == 10:
+                    self.assertIn('receiveTimeout 1.0', line)
+                if i == 12:
+                    self.assertIn('shouldPerformTestRun 1', line)
+                if i == 14:
+                    self.assertIn('proto tcp', line)
+                if i == 16:
+                    self.assertIn('port 9999', line)
+                if i == 18:
+                    self.assertIn('sourcePort -1', line)
+                if i == 20:
+                    self.assertIn('sourceIP 0.0.0.0', line)
+                if i == 24:
+                    self.assertIn('outbound fuzz \'1234.4321\'', line)
+                if i == 25:
+                    self.assertIn('inbound \'[^.^] Launching 4321 testcases for pid 4321\'', line)
 
