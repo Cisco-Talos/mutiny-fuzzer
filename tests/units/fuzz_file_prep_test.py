@@ -212,14 +212,14 @@ class TestFuzzFilePrep(unittest.TestCase):
             prep.processCArray(inputFile)
         inputFile.close()
         # with Defaults
+        prep.DEFAULT_PORT = 9999
         prep.genFuzzConfig()
         prep.FORCE_DEFAULTS = False
         # FUZZER_DATA has been generated, now we can run prompt and output 
         outputMessageNum = prep.getNextMessage(0,Message.Direction.Outbound)
-        prep.promptAndOutput(outputMessageNum, finalMsgNum=6, msgsToFuzz='0,2-4')
+        prep.promptAndOutput(outputMessageNum, finalMsgNum=5, msgsToFuzz='0,2-4')
         with open('tests/units/input_files/test0-0,2-4.fuzzer', 'r') as file:
             lines = file.readlines()
-            print(''.join(lines))
             for i in range(0, len(lines)):
                 line = lines[i]
                 if i == 4:
@@ -241,7 +241,16 @@ class TestFuzzFilePrep(unittest.TestCase):
                 if i == 20:
                     self.assertIn('sourceIP 0.0.0.0', line)
                 if i == 24:
-                    self.assertIn('outbound fuzz \'1234.4321\'', line)
+                    self.assertIn('inbound fuzz \'RFB 003.008\\n\'', line)
                 if i == 25:
-                    self.assertIn('inbound \'[^.^] Launching 4321 testcases for pid 4321\'', line)
+                    self.assertIn('outbound \'RFB 003.008\\n\'', line)
+                if i == 26:
+                    self.assertIn('inbound fuzz \'\\x02\\x02\\x10\'', line)
+                if i == 27:
+                    self.assertIn('outbound fuzz \'\\x02\'', line)
+                if i == 28:
+                    self.assertIn('inbound fuzz \'\\xaa\\xc3\\xe3\\x95\\xd3|\\xd7\\xf9\\xfd\\x84\\xe7\\xf5R\\x94\\x93\\x1c\'', line)
+                if i == 30:
+                    self.assertEqual('\n', line)
+
 
