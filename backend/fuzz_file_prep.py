@@ -270,7 +270,7 @@ def processCArray(inputFile: object, combinePackets: bool = None):
                     message.appendMessageFrom(Message.Format.CommaSeparatedHex, ",".join(messageArray), False, createNewSubcomponent=False)
                     print("\tMessage #%d - Added %d new bytes %s" % (i, len(messageArray), message.direction))
                 if DUMP_ASCII:
-                    print("\tAscii: %s" % (str(message.getoriginalmessage())))
+                    print("\tAscii: %s" % (str(message.getOriginalMessage())))
                 i += 1
                 state = STATE_BETWEEN_MESSAGES
                 LAST_MESSAGE_DIRECTION = message.direction
