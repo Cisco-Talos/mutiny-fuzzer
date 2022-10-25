@@ -127,6 +127,7 @@ class TestFuzzFilePrep(unittest.TestCase):
         # TODO: complete with asserts based on new cArray
 
     def test_genFuzzConfig(self):
+        prep.DEFAULT_PORT = 9999
         prep.genFuzzConfig()
         self.assertEqual(prep.FUZZER_DATA.failureThreshold, 3)
         self.assertEqual(prep.FUZZER_DATA.failureTimeout, 5)
