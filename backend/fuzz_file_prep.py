@@ -161,8 +161,6 @@ def processPcap(inputFile: object):
             # Get the protocol off of the first packet
             if i == 0:
                 if IS_RAW:
-                    import pdb
-                    pdb.set_trace()
                     FUZZER_DATA.proto = 'L2raw'
                     print('Pulling layer 2+ data from pcap to use with raw sockets')
                 else:
