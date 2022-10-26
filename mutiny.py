@@ -61,7 +61,7 @@ from backend.menu_functions import prompt, promptInt, promptString, validateNumb
 from backend.fuzz_file_prep import prep
 
 # Path to Radamsa binary
-RADAMSA=os.path.abspath( os.path.join(__file__, "../../radamsa/bin/radamsa") )
+RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa/bin/radamsa") )
 # Whether to print debug info
 DEBUG_MODE=False
 # Test number to start from, 0 default
