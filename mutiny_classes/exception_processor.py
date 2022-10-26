@@ -40,6 +40,7 @@
 
 import errno
 import socket
+import traceback
 from mutiny_classes.mutiny_exceptions import *
 
 class ExceptionProcessor(object):
@@ -67,4 +68,6 @@ class ExceptionProcessor(object):
             raise AbortCurrentRunException("Server closed connection: %s" % (str(exception)))
         elif exception.__class__ not in MessageProcessorExceptions.all:
             # Default to logging a crash if we don't recognize the error
+            print('Unknown exception received - not Mutiny exception or socket error, backtrace:')
+            traceback.print_exc()
             raise LogCrashException(str(exception))
