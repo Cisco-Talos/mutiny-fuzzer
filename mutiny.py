@@ -107,7 +107,7 @@ def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
     if connection.type == socket.SOCK_STREAM or connection.type == socket.SOCK_DGRAM:
         response = bytearray(connection.recv(readBufSize))
     else:
-        response = bytearray(connection.recvfrom(readBufSize,addr))
+        response, addr = bytearray(connection.recvfrom(readBufSize))
     
     
     if len(response) == 0:
@@ -339,9 +339,9 @@ def sigint_handler(signal: int, frame: object):
             sys.exit(0)
 
 
-def fuzz(args: argparse.Namespace):
+def fuzz(args: argparse.Namespace, testing: bool = False):
     # initialize fuzzing environment according to user provided arguments
-    (messageProcessor, exceptionProcessor, logger) = fuzzSetup(args)
+    (messageProcessor, exceptionProcessor, logger) = fuzzSetup(args, testing)
 
     i = MIN_RUN_NUMBER-1 if FUZZER_DATA.shouldPerformTestRun else MIN_RUN_NUMBER
     failureCount = 0
@@ -477,7 +477,7 @@ def fuzz(args: argparse.Namespace):
         if args.dumpraw:
             exit()
 
-def fuzzSetup(args: argparse.Namespace):
+def fuzzSetup(args: argparse.Namespace, testing=False):
     global FUZZER_DATA
     #Populate global arguments from parseargs
     fuzzerFilePath = args.prepped_fuzz
@@ -496,16 +496,14 @@ def fuzzSetup(args: argparse.Namespace):
     outputDataFolderPath = os.path.join("%s_%s" % (os.path.splitext(fuzzerFilePath)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
     fuzzerFolder = os.path.abspath(os.path.dirname(fuzzerFilePath))
 
-    ###Here we read in the fuzzer file into a dictionary for easier variable propagation
-    optionDict = {"unfuzzedBytes":{}, "message":[]}
-
     FUZZER_DATA = FuzzerData()
     print("Reading in fuzzer data from %s..." % (fuzzerFilePath))
     FUZZER_DATA.readFromFile(fuzzerFilePath)
 
     (messageProcessor, exceptionProcessor, logger) = processorSetup( fuzzerFolder, outputDataFolderPath, args)
 
-    signal.signal(signal.SIGINT, sigint_handler)
+    if not testing:
+        signal.signal(signal.SIGINT, sigint_handler)
 
     return (messageProcessor,  exceptionProcessor, logger)
 
@@ -611,6 +609,7 @@ if __name__ == '__main__':
         sys.argv.append('-h')
 
     args = parseArguments()
+
     args.func(args)
 
 

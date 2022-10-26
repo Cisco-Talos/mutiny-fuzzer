@@ -215,7 +215,6 @@ class FuzzerDataTests(unittest.TestCase):
         
         os.remove(filePath)
         os.remove((newFilePath))
-        # 
 
     def test_writeToFD(self):
         infile = open('./tests/units/input_files/test_FuzzDataRead.fuzzer', 'r')
