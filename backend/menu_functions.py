@@ -111,15 +111,17 @@ def promptString(question, defaultResponse="n", validateFunc=None):
 
     return retStr 
 
-# Takes a string of numbers, seperated via commas
-# or by hyphens, and generates an appropriate list of
-# numbers from it.
-# e.g. str("1,2,3-6")  => list([1,2,xrange(3,7)])
-#
-# If flattenList=True, will return a list of distinct elements
-#
-# If given an invalid number string, returns None
-def validateNumberRange(inputStr, flattenList=False):
+def validateNumberRange(inputStr: str, flattenList: bool = False):
+    '''
+    Takes a string of numbers, seperated via commas
+    or by hyphens, and generates an appropriate list of
+    numbers from it.
+    e.g. str("1,2,3-6")  => list([1,2,xrange(3,7)])
+
+    If flattenList=True, will return a list of distinct elements
+
+    If given an invalid number string, returns None
+    '''
     retList = []
     tmpList = [_f for _f in inputStr.split(',') if _f]
 
