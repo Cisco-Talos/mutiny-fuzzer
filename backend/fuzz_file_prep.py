@@ -100,6 +100,55 @@ def processInputFile():
 
     print_success(f'Processed input file {INPUT_FILE_PATH}')
 
+def processFirstPcapPacket(packet, useMacs, testPort, testMac):
+    global FUZZER_DATA
+    if IS_RAW:
+        FUZZER_DATA.proto = 'L2raw'
+        print('Pulling layer 2+ data from pcap to use with raw sockets')
+    else:
+        if packet.proto == 17:
+            FUZZER_DATA.proto = 'udp'
+            print('Protocol is UDP')
+        elif packet.proto == 6:
+            FUZZER_DATA.proto = 'tcp'
+            print('Protocol is TCP')
+        else:
+            print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to do set "--raw" for Layer 2 fuzzing?')
+            exit()
+        # is not a raw socket, can grab ports
+        # First packet will usually but not always come from client
+        # Use port instead of ip/MAC in case we're fuzzing on the same machine as the daemon
+        # Guess at right port based, confirm to user
+        srcPort = packet.sport
+        dstPort = packet.dport
+        # If port1 == port2, then it can't be the same ip/MAC, so go based on that
+        if srcPort == dstPort:
+            print("Source and destination ports are the same, using MAC addresses to differentiate server and client.")
+            useMacs = True
+    # either raw or ports are the same
+    if useMacs:
+        srcMac = packet.src
+        dstMac = packet.dst
+        serverMac = dstMac
+        if not FORCE_DEFAULTS:
+            if testMac:
+                serverMac = testMac
+            else:
+                serverMac = prompt("Which mac corresponds to the server?", [str(srcMac), str(dstMac)], defaultIndex=1)
+        clientMac = srcMac if serverMac == dstMac else dstMac
+        return useMacs, clientMac, serverMac
+    else:
+        # under assumption that client sent first packet 
+        serverPort = dstPort
+        if not FORCE_DEFAULTS: 
+            if testPort:
+                serverPort = testPort
+            else:
+                serverPort = int(prompt("Which port is the server listening on?", [str(dstPort), str(srcPort)], defaultIndex=0 if srcPort > dstPort else 1))
+
+        clientPort = srcPort if serverPort == dstPort else dstPort
+        DEFAULT_PORT = serverPort
+        return useMacs, clientPort, serverPort
 
 def processPcap(inputFile: object, testPort: int = None, testMac: str = None, combinePackets: bool = None):
     '''
@@ -109,6 +158,8 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
     global LAST_MESSAGE_DIRECTION, FUZZER_DATA, DEFAULT_PORT
     clientPort = None
     serverPort = None
+    clientMac = None
+    serverMac = None
     
     inputData = scapy.all.rdpcap(INPUT_FILE_PATH)
     message = Message()
@@ -116,107 +167,69 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
     # Allow combining packets in same direction back-to-back into one message
     askedToCombinePackets = False
     isCombiningPackets = False
+    useMacs = IS_RAW
 
     j = -1
     for i in range(0, len(inputData)):
-        try:
-            if not clientPort:
-                # First packet will usually but not always come from client
-                # Use port instead of ip/MAC in case we're fuzzing on the same machine as the daemon
-                # Guess at right port based, confirm to user
-                port1 = inputData[i].sport
-                port2 = inputData[i].dport
-                
-                # IF port1 == port2, then it can't be the same ip/MAC, so go based on that
-                useMacs = False
-                if port1 == port2:
-                    print("Source and destination ports are the same, using MAC addresses to differentiate server and client.")
-                    useMacs = True
-                    mac1 = inputData[i].src
-                    mac2 = inputData[i].dst
-            
-                serverPort = port2
-                if useMacs:
-                    serverMac = mac2
-                if not FORCE_DEFAULTS: 
-                    if not useMacs:
-                        if testPort:
-                            serverPort = testPort
-                        else:
-                            serverPort = int(prompt("Which port is the server listening on?", [str(port2), str(port1)], defaultIndex=0 if port1 > port2 else 1))
-                    else:
-                        if testMac:
-                            serverMac = testMac
-                        else:
-                            serverMac = prompt("Which mac corresponds to the server?", [str(mac1), str(mac2)], defaultIndex=1)
-
-                clientPort = port1 if serverPort == port2 else port2
-                if useMacs:
-                    clientMac = mac1 if serverMac == mac2 else mac2
-                DEFAULT_PORT = serverPort
-            elif inputData[i].sport not in [clientPort, serverPort]:
-                print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
-            elif inputData[i].dport not in [clientPort, serverPort]:
-                print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
-            
-            if not useMacs:
-                newMessageDirection = Message.Direction.Outbound if inputData[i].sport == clientPort else Message.Direction.Inbound
+        #try:
+        # first packet
+        if i == 0:
+            useMacs, srcHost, dstHost = processFirstPcapPacket(inputData[i], useMacs, testPort, testMac)
+            if useMacs:
+                clientMac = srcHost 
+                serverMac = dstHost
             else:
-                newMessageDirection = Message.Direction.Outbound if inputData[i].src == clientMac else Message.Direction.Inbound
+                clientPort = srcHost
+                serverPort = dstHost
+        elif not useMacs and inputData[i].sport not in [clientPort, serverPort]:
+            print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
+        elif not useMacs and inputData[i].dport not in [clientPort, serverPort]:
+            print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
+        # TODO: we don't have any sort of checking to make sure a l2raw capture is single stream 
+        if not useMacs:
+            newMessageDirection = Message.Direction.Outbound if inputData[i].sport == clientPort else Message.Direction.Inbound
+        else:
+            newMessageDirection = Message.Direction.Outbound if inputData[i].src == clientMac else Message.Direction.Inbound
 
-            # Get the protocol off of the first packet
-            if i == 0:
-                if IS_RAW:
-                    FUZZER_DATA.proto = 'L2raw'
-                    print('Pulling layer 2+ data from pcap to use with raw sockets')
+        
+        if FUZZER_DATA.proto == 'udp':
+            # This appear to work for UDP.  Go figure, thanks scapy.
+            tempMessageData = bytes(inputData[i].payload.payload.payload)
+        elif FUZZER_DATA.proto == 'tcp': 
+            # This appears to work for TCP
+            # FIXME: .payload breaks line 226 but .load fails with attribute error
+            tempMessageData = inputData[i].payload
+        elif FUZZER_DATA.proto == 'L2raw': 
+            tempMessageData = bytes(inputData[i])
+        else:
+            print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
+            exit()
+
+        if newMessageDirection == LAST_MESSAGE_DIRECTION:
+            if FORCE_DEFAULTS:
+               isCombiningPackets = True 
+               askedToCombinePackets = True
+            if not askedToCombinePackets:
+                if combinePackets is not None:
+                    isCombiningPackets = combinePackets
                 else:
-                    if inputData[i].proto == 17:
-                        FUZZER_DATA.proto = 'udp'
-                        print('Protocol is UDP')
-                    elif inputData[i].proto == 6:
-                        FUZZER_DATA.proto = 'tcp'
-                        print('Protocol is TCP')
-                    else:
-                        print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to do set "--raw" for Layer 2 fuzzing?')
-                        exit()
-            
-            if FUZZER_DATA.proto == 'udp':
-                # This appear to work for UDP.  Go figure, thanks scapy.
-                tempMessageData = bytes(inputData[i].payload.payload.payload)
-            elif FUZZER_DATA.proto == 'tcp': 
-                # This appears to work for TCP
-                tempMessageData = inputData[i].load
-            elif FUZZER_DATA.proto == 'L2raw': 
-                tempMessageData = bytes(inputData[i])
-            else:
-                print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
-                exit()
-
-            if newMessageDirection == LAST_MESSAGE_DIRECTION:
-                if FORCE_DEFAULTS:
-                   isCombiningPackets = True 
-                   askedToCombinePackets = True
-                if not askedToCombinePackets:
-                    if combinePackets is not None:
-                        isCombiningPackets = combinePackets
-                    else:
-                        isCombiningPackets =  prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
-                    askedToCombinePackets = True
-                if isCombiningPackets:
-                    message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
-                    print(SUCCESS + "\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction) + CLEAR)
-                    continue
-            # Either direction isn't the same or we're not combining packets
-            message = Message()
-            message.direction = newMessageDirection
-            LAST_MESSAGE_DIRECTION = newMessageDirection
-            message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
-            FUZZER_DATA.messageCollection.addMessage(message)
-            j += 1
-            print(SUCCESS + "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction) + CLEAR)
-        except AttributeError:
+                    isCombiningPackets =  prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
+                askedToCombinePackets = True
+            if isCombiningPackets:
+                message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
+                print(SUCCESS + "\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction) + CLEAR)
+                continue
+        # Either direction isn't the same or we're not combining packets
+        message = Message()
+        message.direction = newMessageDirection
+        LAST_MESSAGE_DIRECTION = newMessageDirection
+        message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
+        FUZZER_DATA.messageCollection.addMessage(message)
+        j += 1
+        print(SUCCESS + "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction) + CLEAR)
+        #except AttributeError:
             # No payload, keep going (different from empty payload)
-            continue
+        #    continue
 
 def processCArray(inputFile: object, combinePackets: bool = None):
     '''
@@ -323,8 +336,9 @@ def genFuzzConfig(failureThreshold: int = None, failureTimeout: int = None, prot
         FUZZER_DATA.failureThreshold = failureThreshold if failureThreshold else promptInt("\nHow many times should a test case causing a crash or error be repeated?", defaultResponse=3)
         # timeout between failure retries
         FUZZER_DATA.failureTimeout = failureTimeout if failureTimeout else promptInt("When the test case is repeated above, how many seconds should it wait between tests?", defaultResponse=5)
-        # port number to connect on
-        FUZZER_DATA.port = port if port else promptInt("What port should the fuzzer %s?" % ("connect to"), defaultResponse=DEFAULT_PORT)
+        if not IS_RAW:
+            # port number to connect on
+            FUZZER_DATA.port = port if port else promptInt("What port should the fuzzer %s?" % ("connect to"), defaultResponse=DEFAULT_PORT)
         
         # For pcaps, we pull protocol from the pcap itself
         if IS_CARRAYS:
@@ -334,7 +348,7 @@ def genFuzzConfig(failureThreshold: int = None, failureTimeout: int = None, prot
                 # ask if tcp or udp
                 FUZZER_DATA.proto = proto if proto else prompt("Which protocol?", answers=["tcp", "udp"], defaultIndex=0)
 
-    if FUZZER_DATA.port == None:
+    if not IS_RAW and FUZZER_DATA.port == None:
         # address case where CArray does not set default port
         FUZZER_DATA.port = -1
         while(FUZZER_DATA.port <= 0 or FUZZER_DATA.port >= 65535):
@@ -401,7 +415,7 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     
     if not autoGenerateAllClient:
         messagesToFuzz = ''
-        while len(messagesToFuzz) <= 0 or len(messagesToFuzz) > finalMessageNum:
+        while len(messagesToFuzz) < 0 or len(messagesToFuzz) > finalMessageNum:
             messagesToFuzz = msgsToFuzz if msgsToFuzz else promptString("Which message numbers should be fuzzed? valid: 0-%d" % (finalMessageNum),defaultResponse=str(outputMessageNum),validateFunc=validateNumberRange)
 
         # len of messagesToFuzz must now be between 0 and finalMessageNum
