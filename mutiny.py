@@ -571,7 +571,7 @@ def parseFuzzArgs(parser):
     parse arguments for fuzzing
     '''
     parser.add_argument("prepped_fuzz", help="Path to file.fuzzer")
-    parser.add_argument("target_host", help="Target to fuzz")
+    parser.add_argument("target_host", help="Target to fuzz - hostname/ip address (typical) or outbound interface name (L2raw only)")
     parser.add_argument("-s", "--sleeptime", help="Time to sleep between fuzz cases (float)", type=float, default=0)
 
     seed_constraint = parser.add_mutually_exclusive_group()
