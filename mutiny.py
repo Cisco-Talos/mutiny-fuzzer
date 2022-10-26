@@ -103,7 +103,7 @@ def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
     readBufSize = 4096
     connection.settimeout(FUZZER_DATA.receiveTimeout)
 
-    if connection.type == socket.SOCK_STREAM or connection.type == socket.SOCK_DGRAM:
+    if connection.type == socket.SOCK_STREAM or connection.type == socket.SOCK_DGRAM or connection.type == socket.SOCK_RAW:
         response = bytearray(connection.recv(readBufSize))
     else:
         response = bytearray(connection.recvfrom(readBufSize,addr))
@@ -127,7 +127,7 @@ def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
         print("\tReceived: %s" % (response))
     return response
 
-def performRun(host: tuple, logger: Logger, messageProcessor: MessageProcessor, seed: int = -1):
+def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, seed: int = -1):
     '''
     Perform a fuzz run.  
     If seed is -1, don't perform fuzzing (test run)
@@ -137,34 +137,39 @@ def performRun(host: tuple, logger: Logger, messageProcessor: MessageProcessor, 
     if logger != None:
         logger.resetForNewRun()
     
-    addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
-    host = addrs[0][4][0]
-    if host == "::1":
-        host = "127.0.0.1"
-    
-    # cheap testing for ipv6/ipv4/unix
-    # don't think it's worth using regex for this, since the user
-    # will have to actively go out of their way to subvert this.
-    if "." in host:
-        socket_family = socket.AF_INET
-        addr = (host,FUZZER_DATA.port)
-    elif ":" in host:
-        socket_family = socket.AF_INET6 
-        addr = (host,FUZZER_DATA.port)
+    if FUZZER_DATA.proto == 'L2raw':
+        # Raw sockets don't have a remote address, you just specify the
+        # interface to send from, so leave it alone
+        addr = (host, 0)
     else:
-        socket_family = socket.AF_UNIX
-        addr = (host)
+        addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
+        host = addrs[0][4][0]
+        if host == "::1":
+            host = "127.0.0.1"
+        
+        # cheap testing for ipv6/ipv4/unix
+        # don't think it's worth using regex for this, since the user
+        # will have to actively go out of their way to subvert this.
+        if "." in host:
+            socket_family = socket.AF_INET
+            addr = (host,FUZZER_DATA.port)
+        elif ":" in host:
+            socket_family = socket.AF_INET6 
+            addr = (host,FUZZER_DATA.port)
+        else:
+            socket_family = socket.AF_UNIX
+            addr = (host)
 
-    #just in case filename is like "./asdf" !=> AF_INET
-    if "/" in host:
-        socket_family = socket.AF_UNIX
-        addr = (host)
-    
-    # Call messageprocessor preconnect callback if it exists
-    try:
-        messageProcessor.preConnect(seed, host, FUZZER_DATA.port) 
-    except AttributeError:
-        pass
+        #just in case filename is like "./asdf" !=> AF_INET
+        if "/" in host:
+            socket_family = socket.AF_UNIX
+            addr = (host)
+        
+        # Call messageprocessor preconnect callback if it exists
+        try:
+            messageProcessor.preConnect(seed, host, FUZZER_DATA.port) 
+        except AttributeError:
+            pass
     
     # for TCP/UDP/RAW support
     if FUZZER_DATA.proto == "tcp":
@@ -188,8 +193,7 @@ def performRun(host: tuple, logger: Logger, messageProcessor: MessageProcessor, 
     # e.g. "icmp" => 1
     elif FUZZER_DATA.proto in PROTO:
         connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
-        if FUZZER_DATA.proto != "raw":
-            connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
+        connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
         addr = (host,0)
         try:
             connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
@@ -198,7 +202,9 @@ def performRun(host: tuple, logger: Logger, messageProcessor: MessageProcessor, 
             print("Unable to create raw socket, please verify that you have sudo access")
             sys.exit(0)
     elif FUZZER_DATA.proto == "L2raw":
+        # Raw sockets should bind to the interface specified by the user as the "host"
         connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
+        connection.bind(addr)
     else:
         addr = (host,0)
         try:
