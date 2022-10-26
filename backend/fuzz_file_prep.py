@@ -19,6 +19,7 @@ import argparse
 from backend.fuzzer_types import Message, MessageCollection, Logger
 from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange
 from backend.fuzzer_data import FuzzerData
+from backend.packets import PROTO
 import scapy.all
 
 SUCCESS = "\033[92m"
@@ -101,15 +102,15 @@ def processInputFile():
     print_success(f'Processed input file {INPUT_FILE_PATH}')
 
 def processFirstPcapPacket(packet, useMacs, testPort, testMac):
-    global FUZZER_DATA
+    global FUZZER_DATA, DEFAULT_PORT
     if IS_RAW:
         FUZZER_DATA.proto = 'L2raw'
         print('Pulling layer 2+ data from pcap to use with raw sockets')
     else:
-        if packet.proto == 17:
+        if packet.proto == PROTO['udp']:
             FUZZER_DATA.proto = 'udp'
             print('Protocol is UDP')
-        elif packet.proto == 6:
+        elif packet.proto == PROTO['tcp']:
             FUZZER_DATA.proto = 'tcp'
             print('Protocol is TCP')
         else:
@@ -148,7 +149,7 @@ def processFirstPcapPacket(packet, useMacs, testPort, testMac):
 
         clientPort = srcPort if serverPort == dstPort else dstPort
         DEFAULT_PORT = serverPort
-        return useMacs, clientPort, serverPort
+        return False, clientPort, serverPort
 
 def processPcap(inputFile: object, testPort: int = None, testMac: str = None, combinePackets: bool = None):
     '''
@@ -171,65 +172,64 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
 
     j = -1
     for i in range(0, len(inputData)):
-        #try:
-        # first packet
-        if i == 0:
-            useMacs, srcHost, dstHost = processFirstPcapPacket(inputData[i], useMacs, testPort, testMac)
-            if useMacs:
-                clientMac = srcHost 
-                serverMac = dstHost
-            else:
-                clientPort = srcHost
-                serverPort = dstHost
-        elif not useMacs and inputData[i].sport not in [clientPort, serverPort]:
-            print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
-        elif not useMacs and inputData[i].dport not in [clientPort, serverPort]:
-            print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
-        # TODO: we don't have any sort of checking to make sure a l2raw capture is single stream 
-        if not useMacs:
-            newMessageDirection = Message.Direction.Outbound if inputData[i].sport == clientPort else Message.Direction.Inbound
-        else:
-            newMessageDirection = Message.Direction.Outbound if inputData[i].src == clientMac else Message.Direction.Inbound
-
-        
-        if FUZZER_DATA.proto == 'udp':
-            # This appear to work for UDP.  Go figure, thanks scapy.
-            tempMessageData = bytes(inputData[i].payload.payload.payload)
-        elif FUZZER_DATA.proto == 'tcp': 
-            # This appears to work for TCP
-            # FIXME: .payload breaks line 226 but .load fails with attribute error
-            tempMessageData = inputData[i].payload
-        elif FUZZER_DATA.proto == 'L2raw': 
-            tempMessageData = bytes(inputData[i])
-        else:
-            print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
-            exit()
-
-        if newMessageDirection == LAST_MESSAGE_DIRECTION:
-            if FORCE_DEFAULTS:
-               isCombiningPackets = True 
-               askedToCombinePackets = True
-            if not askedToCombinePackets:
-                if combinePackets is not None:
-                    isCombiningPackets = combinePackets
+        try:
+            # first packet
+            if i == 0:
+                useMacs, srcHost, dstHost = processFirstPcapPacket(inputData[i], useMacs, testPort, testMac)
+                if useMacs:
+                    clientMac = srcHost 
+                    serverMac = dstHost
                 else:
-                    isCombiningPackets =  prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
-                askedToCombinePackets = True
-            if isCombiningPackets:
-                message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
-                print(SUCCESS + "\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction) + CLEAR)
-                continue
-        # Either direction isn't the same or we're not combining packets
-        message = Message()
-        message.direction = newMessageDirection
-        LAST_MESSAGE_DIRECTION = newMessageDirection
-        message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
-        FUZZER_DATA.messageCollection.addMessage(message)
-        j += 1
-        print(SUCCESS + "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction) + CLEAR)
-        #except AttributeError:
+                    clientPort = srcHost
+                    serverPort = dstHost
+            elif not useMacs and inputData[i].sport not in [clientPort, serverPort]:
+                print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
+            elif not useMacs and inputData[i].dport not in [clientPort, serverPort]:
+                print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
+            # TODO: we don't have any sort of checking to make sure a l2raw capture is single stream 
+            if not useMacs:
+                newMessageDirection = Message.Direction.Outbound if inputData[i].sport == clientPort else Message.Direction.Inbound
+            else:
+                newMessageDirection = Message.Direction.Outbound if inputData[i].src == clientMac else Message.Direction.Inbound
+
+            if FUZZER_DATA.proto == 'udp':
+                # This appear to work for UDP.  Go figure, thanks scapy.
+                tempMessageData = bytes(inputData[i].payload.payload.payload)
+            elif FUZZER_DATA.proto == 'tcp': 
+                # This appears to work for TCP
+                tempMessageData = bytes(inputData[i].payload.payload.payload)
+                if tempMessageData == b'': continue
+            elif FUZZER_DATA.proto == 'L2raw': 
+                tempMessageData = bytes(inputData[i])
+            else:
+                print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
+                exit()
+
+            if newMessageDirection == LAST_MESSAGE_DIRECTION:
+                if FORCE_DEFAULTS:
+                   isCombiningPackets = True 
+                   askedToCombinePackets = True
+                if not askedToCombinePackets:
+                    if combinePackets is not None:
+                        isCombiningPackets = combinePackets
+                    else:
+                        isCombiningPackets =  prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
+                    askedToCombinePackets = True
+                if isCombiningPackets:
+                    message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
+                    print(SUCCESS + "\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction) + CLEAR)
+                    continue
+            # Either direction isn't the same or we're not combining packets
+            message = Message()
+            message.direction = newMessageDirection
+            LAST_MESSAGE_DIRECTION = newMessageDirection
+            message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
+            FUZZER_DATA.messageCollection.addMessage(message)
+            j += 1
+            print(SUCCESS + "\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction) + CLEAR)
+        except AttributeError:
             # No payload, keep going (different from empty payload)
-        #    continue
+            continue
 
 def processCArray(inputFile: object, combinePackets: bool = None):
     '''
