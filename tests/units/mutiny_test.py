@@ -5,7 +5,7 @@ import socket
 import mutiny
 from argparse import Namespace
 import threading
-
+from backend.fuzzer_data import FuzzerData
 
 class TestMutiny(unittest.TestCase):
 
@@ -22,7 +22,6 @@ class TestMutiny(unittest.TestCase):
     def tearDown(self):
         # in case it has been changed 
         mutiny.RADAMSA = os.path.abspath(os.path.join(__file__,"../../../radamsa/bin/radamsa"))
-        self.args.range = None
         pass
 
     def test_sendPacket(self):
@@ -38,7 +37,6 @@ class TestMutiny(unittest.TestCase):
         pass
 
     def test_fuzz(self):
-        '''
         # setup listening server
         bindip = '127.0.0.1'
         bindport = 9999
@@ -47,17 +45,15 @@ class TestMutiny(unittest.TestCase):
         serv = socket.socket(socket_family, socket_type)
         serv.bind((bindip,bindport))
         serv.listen()
+        mutiny.MAX_RUN_NUMBER = 1
         fuzz_func = threading.Thread(target=mutiny.fuzz, args=([self.args, True]))
         fuzz_func.start()
         cli_sock, cli_addr = serv.accept()
         cli_sock.recv(4096)
         cli_sock.send(b'starting tests')
-        # TODO: figure out how to send sigint to the fuzz_func thread or another way to kill
-        # NOTE: ^^this can be addressed by just setting MAX_RUN_NUMBER to something other than -1
         fuzz_func.join()
         cli_sock.close()
         serv.close()
-        '''
 
     def test_fuzzSetup(self):
         mutiny.fuzzSetup(self.args, testing=True)
@@ -102,14 +98,69 @@ class TestMutiny(unittest.TestCase):
         shutil.rmtree(self.logFilePath1)
 
     def test_processorSetup(self):
-        pass
+        outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
+        fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
+        mutiny.FUZZER_DATA = FuzzerData()
+        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
+        msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
+        self.assertTrue(os.path.exists(outputDataFolderPath))
+        # just check they arent none, we can verify their correct initialization in their class tests
+        self.assertIsNotNone(msgProcessor)
+        self.assertIsNotNone(exceptProcessor)
+        self.assertIsNotNone(logger)
+        shutil.rmtree(outputDataFolderPath[:-5])
 
-    def test_parseFuzzArgs(self):
-        pass
+    def test_processorSetupNonDefaultFolder(self):
+        outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
+        fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
+        mutiny.FUZZER_DATA = FuzzerData()
+        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
+        mutiny.FUZZER_DATA.processorDirectory = 'testdir'
+        msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
+        self.assertIsNotNone(msgProcessor)
+        self.assertIsNotNone(exceptProcessor)
+        self.assertIsNotNone(logger)
+        shutil.rmtree(outputDataFolderPath[:-5])
 
-    def test_parsePrepArgs(self):
-        pass
+    # TODO: create tests for custom processors
 
-    def test_parseArguments(self):
-        pass
-    
+
+    def test_processorSetupNonQuiet(self):
+        outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
+        self.args.quiet = True
+        fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
+        mutiny.FUZZER_DATA = FuzzerData()
+        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
+        msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
+        self.assertIsNotNone(msgProcessor)
+        self.assertIsNotNone(exceptProcessor)
+        self.assertIsNone(logger)
+        self.assertFalse(os.path.exists(outputDataFolderPath))
+
+    def test_processorSetupNonDump(self):
+        outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
+        fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
+        self.args.dumpraw = True
+        mutiny.FUZZER_DATA = FuzzerData()
+        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
+        msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
+        self.assertTrue(os.path.exists(outputDataFolderPath))
+        # just check they arent none, we can verify their correct initialization in their class tests
+        self.assertIsNotNone(msgProcessor)
+        self.assertIsNotNone(exceptProcessor)
+        self.assertIsNotNone(logger)
+        self.assertEqual(mutiny.DUMPDIR, outputDataFolderPath)
+        shutil.rmtree(outputDataFolderPath[:-5])
+
+        # with quiet = True
+        self.args.quiet = True
+        msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
+        self.assertFalse(os.path.exists(outputDataFolderPath))
+        # just check they arent none, we can verify their correct initialization in their class tests
+        self.assertIsNotNone(msgProcessor)
+        self.assertIsNotNone(exceptProcessor)
+        self.assertIsNone(logger)
+        self.assertEqual(mutiny.DUMPDIR, 'dumpraw')
+        self.assertTrue(os.path.exists(mutiny.DUMPDIR))
+        shutil.rmtree(mutiny.DUMPDIR)
+
