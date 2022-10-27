@@ -403,7 +403,10 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     if FORCE_DEFAULTS or autoGenerateAllClient:
         finalMessageNum = len(FUZZER_DATA.messageCollection.messages) - 1
     else:
-        finalMessageNum = finalMsgNum if finalMsgNum else promptInt("What is the last message number you want output?", defaultResponse=len(FUZZER_DATA.messageCollection.messages)-1)
+        if len(FUZZER_DATA.messageCollection.messages) == 1:
+            finalMessageNum = 0
+        else:
+            finalMessageNum = finalMsgNum if finalMsgNum else promptInt("What is the last message number you want output?", defaultResponse=len(FUZZER_DATA.messageCollection.messages)-1)
 
     # any messages previously marked for fuzzing, unmark first
     # inefficient as can be, but who cares
@@ -415,7 +418,7 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     
     if not autoGenerateAllClient:
         messagesToFuzz = ''
-        while len(messagesToFuzz) <= 0 or len(messagesToFuzz) > finalMessageNum:
+        while len(messagesToFuzz) <= 0 :
             messagesToFuzz = msgsToFuzz if msgsToFuzz else promptString("Which message numbers should be fuzzed? valid: 0-%d" % (finalMessageNum),defaultResponse=str(outputMessageNum),validateFunc=validateNumberRange)
         # len of messagesToFuzz must now be between 0 and finalMessageNum
         outputFileNameEnd = messagesToFuzz
