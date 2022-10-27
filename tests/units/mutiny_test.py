@@ -1,4 +1,6 @@
 import unittest
+import shutil
+import os
 import socket
 import mutiny
 from argparse import Namespace
@@ -10,11 +12,13 @@ class TestMutiny(unittest.TestCase):
 
 
     def setUp(self):
-        self.args = Namespace(prepped_fuzz='tests/units/input_files/test_FuzzDataRead.fuzzer', target_host='127.0.0.1', sleeptime=0, range=1, loop=None, dumpraw=None, quiet=False, logAll=False)
+        self.args = Namespace(prepped_fuzz='tests/units/input_files/test_FuzzDataRead.fuzzer', target_host='127.0.0.1', sleeptime=0, range='1', loop=None, dumpraw=None, quiet=False, logAll=False)
         
         pass
 
     def tearDown(self):
+        # in case it has been changed 
+        mutiny.RADAMSA = os.path.abspath(os.path.join(__file__,"../../../radamsa/bin/radamsa"))
         pass
 
     def test_sendPacket(self):
@@ -56,27 +60,36 @@ class TestMutiny(unittest.TestCase):
         # let fuzzer_data.readFromFile tests verify correctness of contents, just check that it was called
         self.assertIsNotNone(mutiny.FUZZER_DATA)
         self.assertEqual(len(mutiny.FUZZER_DATA.messageCollection.messages), 7)
+        shutil.rmtree('./tests/units/input_files/test_FuzzDataRead_logs')
 
     def test_fuzzSetupNonExistentRadamsa(self):
-        pass
-    '''
-        # TODO: fix, for some reason the sys.exit is different from exit() i guess?
         with self.assertRaises(SystemExit) as contextManager:
             # radamsa doesn't exist
             mutiny.RADAMSA = '/non-existent/file'
             mutiny.fuzzSetup(self.args, testing=True)
             self.assertEqual(contextManager.exception.code, 3)
-    '''
+        shutil.rmtree('./tests/units/input_files/test_FuzzDataRead_logs')
 
     def test_fuzzSetupNonNoneRange(self):
         # non-None range
-        pass
         self.args.range = '1-3'
         mutiny.fuzzSetup(self.args, testing=True)
-        self.assertEqual(mutiny.MIN_RUN_NUMBER, 3)
+        self.assertEqual(mutiny.MIN_RUN_NUMBER, 1)
+        self.assertEqual(mutiny.MAX_RUN_NUMBER, 3)
+        shutil.rmtree('./tests/units/input_files/test_FuzzDataRead_logs')
 
     def test_fuzzSetupNonNoneLoop(self):
         # non-None loop
+        self.args.loop = '1'
+        mutiny.fuzzSetup(self.args, testing=True)
+        self.assertEqual(mutiny.SEED_LOOP, '1')
+        shutil.rmtree('./tests/units/input_files/test_FuzzDataRead_logs')
+        self.args.loop = '2-4'
+        mutiny.fuzzSetup(self.args, testing=True)
+        shutil.rmtree('./tests/units/input_files/test_FuzzDataRead_logs')
+        self.args.loop = '0, 2-4'
+        mutiny.fuzzSetup(self.args, testing=True)
+        shutil.rmtree('./tests/units/input_files/test_FuzzDataRead_logs')
         pass
 
     def test_processorSetup(self):
