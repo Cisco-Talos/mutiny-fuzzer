@@ -503,8 +503,7 @@ def fuzzSetup(args: argparse.Namespace, testing=False):
 
     (messageProcessor, exceptionProcessor, logger) = processorSetup( fuzzerFolder, outputDataFolderPath, args)
 
-    if not testing:
-        signal.signal(signal.SIGINT, sigint_handler)
+    if not testing: signal.signal(signal.SIGINT, sigint_handler)
 
     return (messageProcessor,  exceptionProcessor, logger)
 
