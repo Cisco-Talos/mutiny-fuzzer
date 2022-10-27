@@ -33,7 +33,7 @@ class FuzzerDataTests(unittest.TestCase):
         self.assertEqual(self.fuzzdata.receiveTimeout, 1.0)
         self.assertEqual(self.fuzzdata.shouldPerformTestRun, 1)
         self.assertEqual(self.fuzzdata.proto, 'tcp')
-        self.assertEqual(self.fuzzdata.port, 22)
+        self.assertEqual(self.fuzzdata.port, 9999)
         self.assertEqual(self.fuzzdata.sourcePort, -1)
         self.assertEqual(self.fuzzdata.sourceIP, '0.0.0.0')
         # --- checking message contents
@@ -108,7 +108,7 @@ class FuzzerDataTests(unittest.TestCase):
         self.assertEqual(self.fuzzdata.receiveTimeout, 1.0)
         self.assertEqual(self.fuzzdata.shouldPerformTestRun, 1)
         self.assertEqual(self.fuzzdata.proto, 'tcp')
-        self.assertEqual(self.fuzzdata.port, 22)
+        self.assertEqual(self.fuzzdata.port, 9999)
         self.assertEqual(self.fuzzdata.sourcePort, -1)
         self.assertEqual(self.fuzzdata.sourceIP, '0.0.0.0')
         # --- checking message contents
@@ -222,8 +222,7 @@ class FuzzerDataTests(unittest.TestCase):
         for i in range(len(inlines)):
             inline = inlines[i]
             outline = outlines[i]
-            print(inline)
-            print(outline)
-            self.assertEqual(inline, outlines)
+            self.assertEqual(inline, outline)
         
-
+        infile.close()
+        outfile.close()

@@ -415,9 +415,8 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     
     if not autoGenerateAllClient:
         messagesToFuzz = ''
-        while len(messagesToFuzz) < 0 or len(messagesToFuzz) > finalMessageNum:
+        while len(messagesToFuzz) <= 0 or len(messagesToFuzz) > finalMessageNum:
             messagesToFuzz = msgsToFuzz if msgsToFuzz else promptString("Which message numbers should be fuzzed? valid: 0-%d" % (finalMessageNum),defaultResponse=str(outputMessageNum),validateFunc=validateNumberRange)
-
         # len of messagesToFuzz must now be between 0 and finalMessageNum
         outputFileNameEnd = messagesToFuzz
         # iterate through messages and set .isFuzzed on subcomponents

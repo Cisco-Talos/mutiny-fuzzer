@@ -4,4 +4,3 @@ radamsa-*/*
 *.pyc
 *_logs*
 sadsox
-tests/units/input_files/*.fuzzer
