@@ -43,7 +43,7 @@ class TestMonitorWrapper(unittest.TestCase):
     def test_1sec_delay_crash_monitor(self):
         wrapper = ProcDirector.MonitorWrapper('127.0.0.1', 2500, self.Monitor1SecDelayCrash())
         self.assertTrue(wrapper.queue.empty())
-        time.sleep(1)
+        time.sleep(1.1) # Give a bit of breathing room
         self.assertFalse(wrapper.queue.empty())
         self.assertTrue(type(wrapper.queue.get()), LogCrashException)
 
