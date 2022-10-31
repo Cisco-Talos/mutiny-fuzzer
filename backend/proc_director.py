@@ -72,7 +72,7 @@ class ProcDirector(object):
                 # On failure, load default
                 filepath = os.path.join(defaultDir, "{0}.py".format(filename))
                 imp.load_source(filename, filepath)
-                arint(("Loaded default processor: {0}".format(filepath)))
+                print(("Loaded default processor: {0}".format(filepath)))
                 
         # Set all the appropriate classes to the appropriate modules
         self.messageProcessor = sys.modules['message_processor'].MessageProcessor
@@ -95,6 +95,8 @@ class ProcDirector(object):
 
         # Don't override this function
         def signalCrashDetectedOnMain(self, exception: Exception):
+            if not isinstance(exception, Exception):
+                print('Error: Monitor signalMain() should be sent an exception!  Continuing, but Monitor unlikely to work properly')
             self.queue.put(exception)
     
     def startMonitor(self, host, port):

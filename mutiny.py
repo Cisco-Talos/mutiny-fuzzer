@@ -542,7 +542,7 @@ def processorSetup( fuzzerFolder: str, outputDataFolderPath: str, args: argparse
 
     ########## Launch child monitor thread
         ### monitor.task = spawned thread
-        ### monitor.crashEvent = threading.Event()
+        ### monitor.queue = enqueued exceptions
     MONITOR = procDirector.startMonitor(args.target_host,FUZZER_DATA.port)
 
     #! make it so logging message does not appear if reproducing (i.e. -r x-y cmdline arg is set)
