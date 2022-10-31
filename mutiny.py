@@ -138,6 +138,7 @@ def performRun(host: tuple, logger: Logger, messageProcessor: MessageProcessor, 
     if logger != None:
         logger.resetForNewRun()
     
+    # ------------------------------------------------------FIXME: the start of a new function, possibly called create_connection, should be here and end at the next --- comment
     addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
     host = addrs[0][4][0]
     if host == "::1":
@@ -227,6 +228,7 @@ def performRun(host: tuple, logger: Logger, messageProcessor: MessageProcessor, 
     if FUZZER_DATA.proto == "tcp" or FUZZER_DATA.proto == "tls":
         # Now that we've had a chance to bind as necessary, connect
         connection.connect(addr)
+    # -------------------------------------------------------------------------------------------- END OF POTENTIAL CREATE_CONNECTION FUNCTION
 
     i = 0   
     for i in range(0, len(FUZZER_DATA.messageCollection.messages)):

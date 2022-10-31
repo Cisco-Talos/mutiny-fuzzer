@@ -15,8 +15,6 @@ class TestMutiny(unittest.TestCase):
         self.fuzzFilePath1 = './tests/units/input_files/test_FuzzDataRead.fuzzer'
         self.logFilePath1 = self.fuzzFilePath1[:-7] + '_logs'
         self.args = Namespace(prepped_fuzz=self.fuzzFilePath1, target_host='127.0.0.1', sleeptime=0, range=None, loop=None, dumpraw=None, quiet=False, logAll=False)
-
-        
         pass
 
     def tearDown(self):
@@ -25,16 +23,49 @@ class TestMutiny(unittest.TestCase):
         pass
 
     def test_sendPacket(self):
-        bindip = '127.0.0.1'
-        bindport = 9999
+        def handle_connection(test_type):
+            if test_type == 'non-tcp':
+                socket_family = socket.SOCK_DGRAM
+            test_conn = socket.socket(socket_family, socket_type)
+            test_conn.bind((test_ip, test_port))
+            test_conn.listen()
+            conn, mutiny_addr = test_conn.accept()
+            received_data['data'] = conn.recv(4)
+            conn.close()
+            test_conn.close()
+            
+        received_data = {}
+        mutiny.FUZZER_DATA = FuzzerData()
+        mutiny.FUZZER_DATA.receiveTimeout = 3.0
+        test_ip = '127.0.0.1'
+        test_port = 9999
         socket_family = socket.AF_INET
         socket_type = socket.SOCK_STREAM
-        serv = socket.socket
+        mutiny_conn = socket.socket(socket_family, socket_type)
+        mutiny_conn.bind(('0.0.0.0', 0))
+        out_packet_data = bytes('test', 'utf-8')
+        # tcp test
+        conn_thread = threading.Thread(target=handle_connection, args=('tcp',))
+        conn_thread.start()
+        test_addr = (test_ip, test_port)
+        mutiny_conn.connect(test_addr)
+        mutiny.sendPacket(mutiny_conn, test_addr, out_packet_data)
+        conn_thread.join()
+        mutiny_conn.close()
+        self.assertEqual(received_data['data'], out_packet_data)
+        # non-tcp test
+        test_port = 9998 # to avoid issues binding to same port in short time
+        conn_thread = threading.Thread(target=handle_connection, args=('non-tcp',))
+        conn_thread.start()
+        test_addr = (test_ip, test_port)
+        mutiny_conn.connect(test_addr)
+        mutiny.sendPacket(mutiny_conn, test_addr, out_packet_data)
+        conn_thread.join()
+        mutiny_conn.close()
+        self.assertEqual(received_data['data'], out_packet_data)
 
-        conn = ''
-        addr = ''
-        outPacketData = ''
-        mutiny.sendPacket(conn, addr, outPacketData)
+
+
 
     def test_receivePacket(self):
         pass
@@ -55,6 +86,7 @@ class TestMutiny(unittest.TestCase):
         min_run, max_run = mutiny.getRunNumbersFromArgs(str_args)
         self.assertEqual(min_run, 1)
         self.assertEqual(max_run, -1)
+        # single iteration
         str_args = '1'
         min_run, max_run = mutiny.getRunNumbersFromArgs(str_args)
         self.assertEqual(min_run, 1)
