@@ -334,16 +334,25 @@ def getRunNumbersFromArgs(strArgs: str):
         return (int(strArgs),int(strArgs)) 
 
 #----------------------------------------------------
-# Set up signal handler for CTRL+C and signals from child monitor thread
-# since this is the same signal, we use the monitor.crashEvent flag()
-# to differentiate between a CTRL+C and a interrupt_main() call from child 
+# Set up signal handler for CTRL+C
 def sigint_handler(signal: int, frame: object):
-    if not MONITOR.crashEvent.isSet():
-            # No event = quit
-            # Quit on ctrl-c
-            print("\nSIGINT received, stopping\n")
-            sys.exit(0)
+    # Quit on ctrl-c
+    print("\nSIGINT received, stopping\n")
+    sys.exit(0)
 
+def raise_last_monitor_event_if_any():
+    # Check the monitor queue for exceptions generated during run
+    if not MONITOR.queue.empty():
+        print('Monitor event detected')
+        # If Monitor sends a bunch of exceptions, we just take the last one
+        if MONITOR.queue.qsize() > 1:
+            print(f'Monitor has {MONITOR.queue.qsize()} exceptions enqueued, ignoring all but last')
+        
+        last_exception = None
+        while not MONITOR.queue.empty():
+            last_exception = MONITOR.queue.get()   
+        
+        raise last_exception
 
 def fuzz(args: argparse.Namespace):
     # initialize fuzzing environment according to user provided arguments
@@ -382,18 +391,12 @@ def fuzz(args: argparse.Namespace):
                         logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                     except AttributeError:
                         pass
-                     
-            except Exception as e:
-                if MONITOR.crashEvent.isSet():
-                    print("Crash event detected")
-                    try:
-                        logger.outputLog(i, FUZZER_DATA.messageCollection, "Crash event detected")
-                        #exit()
-                    except AttributeError: 
-                        pass
-                    MONITOR.crashEvent.clear()
+            
+                # Check for any exceptions from Monitor
+                raise_last_monitor_event_if_any()
 
-                elif logAll:
+            except Exception as e:
+                if logAll:
                     try:
                         logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                     except AttributeError:
@@ -411,7 +414,7 @@ def fuzz(args: argparse.Namespace):
         except LogCrashException as e:
             if failureCount == 0:
                 try:
-                    print("MessageProcessor detected a crash")
+                    print("Mutiny detected a crash")
                     logger.outputLog(i, FUZZER_DATA.messageCollection, str(e))
                 except AttributeError:  
                     pass   

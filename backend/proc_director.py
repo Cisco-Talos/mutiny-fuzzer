@@ -96,7 +96,8 @@ class ProcDirector(object):
         # Don't override this function
         def signalCrashDetectedOnMain(self, exception: Exception):
             if not isinstance(exception, Exception):
-                print('Error: Monitor signalMain() should be sent an exception!  Continuing, but Monitor unlikely to work properly')
+                print('Error: Invalid monitor behavior - signalMain() must be sent an exception, usually a Mutiny exception.')
+                sys.exit(-1)
             self.queue.put(exception)
     
     def startMonitor(self, host, port):
