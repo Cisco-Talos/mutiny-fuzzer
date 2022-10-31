@@ -318,11 +318,14 @@ def getRunNumbersFromArgs(strArgs: str):
         testNumbers = strArgs.split("-")
         if len(testNumbers) == 2:
             if len(testNumbers[1]): #e.g. strArgs="1-50"
+                # cant have min > max
+                if (int(testNumbers[0]) > int(testNumbers[1])):
+                    sys.exit("Invalid test range given: %s" % strArgs)
                 return (int(testNumbers[0]), int(testNumbers[1]))
             else:                   #e.g. strArgs="3-" (equiv. of --skip-to)
                 return (int(testNumbers[0]),-1)
         else: #e.g. strArgs="1-2-3-5.." 
-            sys.exit("Invalid test range given: %s" % args)
+            sys.exit("Invalid test range given: %s" % strArgs)
     else:
         # If they pass a non-int, allow this to bomb out
         return (int(strArgs),int(strArgs)) 

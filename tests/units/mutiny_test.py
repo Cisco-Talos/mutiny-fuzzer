@@ -25,7 +25,16 @@ class TestMutiny(unittest.TestCase):
         pass
 
     def test_sendPacket(self):
-        pass
+        bindip = '127.0.0.1'
+        bindport = 9999
+        socket_family = socket.AF_INET
+        socket_type = socket.SOCK_STREAM
+        serv = socket.socket
+
+        conn = ''
+        addr = ''
+        outPacketData = ''
+        mutiny.sendPacket(conn, addr, outPacketData)
 
     def test_receivePacket(self):
         pass
@@ -34,7 +43,35 @@ class TestMutiny(unittest.TestCase):
         pass
 
     def test_getRunNumbersFromArgs(self):
-        pass
+        min_run = ''
+        max_run = ''
+        # subsequent
+        str_args = '1-2'
+        min_run, max_run = mutiny.getRunNumbersFromArgs(str_args)
+        self.assertEqual(min_run, 1)
+        self.assertEqual(max_run, 2)
+        # --skip-to
+        str_args = '1-'
+        min_run, max_run = mutiny.getRunNumbersFromArgs(str_args)
+        self.assertEqual(min_run, 1)
+        self.assertEqual(max_run, -1)
+        str_args = '1'
+        min_run, max_run = mutiny.getRunNumbersFromArgs(str_args)
+        self.assertEqual(min_run, 1)
+        self.assertEqual(max_run,1)
+
+        # reverse order
+        str_args = '2-1'
+        with self.assertRaises(SystemExit) as contextManager:
+            min_run, max_run = mutiny.getRunNumbersFromArgs(str_args)
+            self.assertEqual(contextManager.exception.code, 3)
+
+        # invalid format
+        str_args = '1-2-5'
+        with self.assertRaises(SystemExit) as contextManager:
+            min_run, max_run = mutiny.getRunNumbersFromArgs(str_args)
+            self.assertEqual(contextManager.exception.code, 3)
+
 
     def test_fuzz(self):
         # setup listening server
