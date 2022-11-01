@@ -60,6 +60,7 @@ from backend.fuzzer_data import FuzzerData
 from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange
 from backend.fuzz_file_prep import prep
 
+
 # Path to Radamsa binary
 RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa/bin/radamsa") )
 # Whether to print debug info
@@ -128,7 +129,203 @@ def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
         print("\tReceived: %s" % (response))
     return response
 
-def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, seed: int = -1):
+def get_addr(host):
+    '''
+    using the host parameter and protocol type, determines which format of address to use
+    and calls message_processor.preConnect if proto is not L2raw
+    '''
+    socket_family = None
+    if FUZZER_DATA.proto == 'L2raw':
+        addr = (host,0)
+        socket_family = socket.AF_PACKET
+    else:
+        addrs = socket.getaddrinfo(host,fuzzer_data.port)
+        host = addrs[0][4][0]
+        if host == "::1":
+            host = "127.0.0.1"
+        
+        # cheap testing for ipv6/ipv4/unix
+        # don't think it's worth using regex for this, since the user
+        # will have to actively go out of their way to subvert this.
+        if "." in host:
+            socket_family = socket.af_inet
+            addr = (host,fuzzer_data.port)
+        elif ":" in host:
+            socket_family = socket.af_inet6 
+            addr = (host,fuzzer_data.port)
+        else:
+            socket_family = socket.af_unix
+            addr = (host)
+        #just in case filename is like "./asdf" !=> af_inet
+        if "/" in host:
+            socket_family = socket.af_unix
+            addr = (host)
+
+    return host, addr, socket_family
+
+def bind_to_interface(connection, addr=None):
+    if FUZZER_DATA.proto == 'L2raw':
+        connection.bind(addr)
+    else:
+        if FUZZER_DATA.sourcePort != -1:
+            # Only support right now for tcp or udp, but bind source port address to something
+            # specific if requested
+            if FUZZER_DATA.sourceIP != "" or FUZZER_DATA.sourceIP != "0.0.0.0":
+                connection.bind((FUZZER_DATA.sourceIP, FUZZER_DATA.sourcePort))
+            else:
+                # User only specified a port, not an IP
+                connection.bind(('0.0.0.0', FUZZER_DATA.sourcePort))
+        elif FUZZER_DATA.sourceIP != "" and FUZZER_DATA.sourceIP != "0.0.0.0":
+            # No port was specified, so 0 should auto-select
+            connection.bind((FUZZER_DATA.sourceIP, 0))
+
+    return connection
+
+def connect_to_tcp_socket(host, seed, socket_family):
+    host, addr, socket_family = get_addr(host)
+    connection = socket.socket(socket_family, socket.SOCK_STREAM)
+    bind_to_interface(connection)
+    connection.connect(addr)
+
+def connect_to_udp_socket(host, seed, socket_family):
+    host, addr, socket_family = get_addr(host)
+    connection = socket.socket(socket_family, socket.SOCK_DGRAM)
+    connection = bind_to_interface(connection)
+
+def connect_to_tls_socket(host,seed,message_processor):
+    host, addr, socket_family = get_addr(host)
+    try:
+        _create_unverified_https_context = ssl._create_unverified_context
+    except AttributeError:
+        # Legacy Python that doesn't verify HTTPS certificates by default
+        pass
+    else:
+        # Handle target environment that doesn't support HTTPS verification
+        ssl._create_default_https_context = _create_unverified_https_context
+    tcpConnection = socket.socket(socket_family,socket.SOCK_STREAM)
+    connection = ssl.wrap_socket(tcpConnection)
+    bind_to_interface(connection)
+    connection.connect(addr)
+    
+    return connection
+
+def connect_to_raw_socket(host,seed,message_processor):
+    host, addr, socket_family = get_addr(host)
+    connection = socket.socket(socket_family,socket.SOCK_RAW, 0x0300)
+    bind_to_interface(addr, connection)
+    return connection
+
+
+def create_connection(host, seed, message_processor):
+    '''
+    handles the creation of a network connection for the fuzzing session and returns the connection
+    '''
+    connection = None
+    supported_protocols = ['tcp','udp','tls','L2raw']
+    if FUZZER_DATA.proto not in supported_protocols:
+        # TODO: after moving print_error to ./util/, call it here
+        print("[ERROR] The protocol specified in the .fuzzer file is not currently supported.\nIf you'd like, you can submit an issue or a PR for support!")
+        sys.exit(0)
+
+    # Call messageprocessor preconnect callback if it exists
+    try:
+        message_processor.preConnect(seed, host, FUZZER_DATA.port) 
+    except AttributeError:
+        pass
+
+    if FUZZER_DATA.proto == 'tcp':
+        connection = connect_to_tcp_socket(host)
+    elif FUZZER_DATA.proto == 'udp':
+        connection = connect_to_udp_socket(host)
+    elif FUZZER_DATA.proto == 'tls':
+        connection = connect_to_tls_socket(host)
+    # must be a raw socket since we already checked if protocol was supported
+    else :
+        connection = connect_to_raw_socket(host)
+
+    return connection
+
+def fuzz_subcomponents(message, seed):
+    '''
+    iterates through each subcomponent in a message and uses radamsa to generate fuzzed
+    versions of each subcomponent if its .isFuzzed is set to True
+    '''
+    for subcomponent in message.subcomponents:
+        if subcomponent.isFuzzed:
+            radamsa = subprocess.Popen([RADAMSA, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            byteArray = subcomponent.getAlteredByteArray()
+            (fuzzedByteArray, error_output) = radamsa.communicate(input=byteArray)
+            fuzzedByteArray = bytearray(fuzzedByteArray)
+            subcomponent.setAlteredByteArray(fuzzedByteArray)
+
+def send_fuzz_session_message(message, message_processor, seed, dump_raw):
+    # Primarily used for deciding how to handle preFuzz/preSend callbacks
+    message_has_subcomponents = len(message.subcomponents) > 1
+
+    # Get original subcomponents for outbound callback only once
+    original_subcomponents = [subcomponent.getOriginalByteArray() for subcomponent in message.subcomponents]
+    
+    if message_has_subcomponents:
+        # For message with subcomponents, call prefuzz on fuzzed subcomponents
+        for j in range(0, len(message.subcomponents)):
+            subcomponent = message.subcomponents[j] 
+            # Note: we WANT to fetch subcomponents every time on purpose
+            # This way, if user alters subcomponent[0], it's reflected when
+            # we call the function for subcomponent[1], etc
+            actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
+            prefuzz = message_processor.preFuzzSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, original_subcomponents, actualSubcomponents))
+            subcomponent.setAlteredByteArray(prefuzz)
+    else:
+        # If no subcomponents, call prefuzz on ENTIRE message
+        actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
+        prefuzz = message_processor.preFuzzProcess(actualSubcomponents[0], MessageProcessorExtraParams(i, -1, message.isFuzzed, original_subcomponents, actualSubcomponents))
+        message.subcomponents[0].setAlteredByteArray(prefuzz)
+
+    # Skip fuzzing for seed == -1
+    if seed > -1:
+        # Now run the fuzzer for each fuzzed subcomponent
+        fuzz_subcomponents(message, seed)
+    
+    # Fuzzing has now been done if this message is fuzzed
+    # Always call preSend() regardless for subcomponents if there are any
+    if message_has_subcomponents:
+        for j in range(0, len(message.subcomponents)):
+            subcomponent = message.subcomponents[j] 
+            # See preFuzz above - we ALWAYS regather this to catch any updates between
+            # callbacks from the user
+            actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
+            presend = message_processor.preSendSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, original_subcomponents, actualSubcomponents))
+            subcomponent.setAlteredByteArray(presend)
+    # Always let the user make any final modifications pre-send, fuzzed or not
+    actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
+    byteArrayToSend = message_processor.preSendProcess(message.getAlteredMessage(), MessageProcessorExtraParams(i, -1, message.isFuzzed, original_subcomponents, actualSubcomponents))
+
+    if dump_raw:
+        loc = os.path.join(DUMPDIR,"%d-outbound-seed-%d"%(i,dump_raw))
+        if message.isFuzzed:
+            loc+="-fuzzed"
+        with open(loc,"wb") as f:
+            f.write(repr(str(byteArrayToSend))[1:-1])
+
+    sendPacket(connection, addr, byteArrayToSend)
+
+def receive_fuzz_session_message(message, connection, addr, logger, message_processor, dump_raw):
+    # Receiving packet from server
+    messageByteArray = message.getAlteredMessage()
+    data = receivePacket(connection,addr,len(messageByteArray))
+    if data == messageByteArray:
+        print("\tReceived expected response")
+    if logger != None:
+        logger.setReceivedMessageData(i, data)
+
+    message_processor.postReceiveProcess(data, MessageProcessorExtraParams(i, -1, False, [messageByteArray], [data]))
+    if dumpraw:
+        loc = os.path.join(DUMPDIR,"%d-inbound-seed-%d"%(i,dumpraw))
+        with open(loc,"wb") as f:
+            f.write(repr(str(data))[1:-1])
+
+
+def performRun(host: str, logger: Logger, message_processor: MessageProcessor, dump_raw, seed: int = -1):
     '''
     Perform a fuzz run.  
     If seed is -1, don't perform fuzzing (test run)
@@ -138,120 +335,7 @@ def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, se
     if logger != None:
         logger.resetForNewRun()
     
-<<<<<<< HEAD
-    # ------------------------------------------------------FIXME: the start of a new function, possibly called create_connection, should be here and end at the next --- comment
-    addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
-    host = addrs[0][4][0]
-    if host == "::1":
-        host = "127.0.0.1"
-    
-    # cheap testing for ipv6/ipv4/unix
-    # don't think it's worth using regex for this, since the user
-    # will have to actively go out of their way to subvert this.
-    if "." in host:
-        socket_family = socket.AF_INET
-        addr = (host,FUZZER_DATA.port)
-    elif ":" in host:
-        socket_family = socket.AF_INET6 
-        addr = (host,FUZZER_DATA.port)
-=======
-    if FUZZER_DATA.proto == 'L2raw':
-        # Raw sockets don't have a remote address, you just specify the
-        # interface to send from, so leave it alone
-        addr = (host, 0)
->>>>>>> origin/main
-    else:
-        addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
-        host = addrs[0][4][0]
-        if host == "::1":
-            host = "127.0.0.1"
-        
-        # cheap testing for ipv6/ipv4/unix
-        # don't think it's worth using regex for this, since the user
-        # will have to actively go out of their way to subvert this.
-        if "." in host:
-            socket_family = socket.AF_INET
-            addr = (host,FUZZER_DATA.port)
-        elif ":" in host:
-            socket_family = socket.AF_INET6 
-            addr = (host,FUZZER_DATA.port)
-        else:
-            socket_family = socket.AF_UNIX
-            addr = (host)
-
-        #just in case filename is like "./asdf" !=> AF_INET
-        if "/" in host:
-            socket_family = socket.AF_UNIX
-            addr = (host)
-        
-        # Call messageprocessor preconnect callback if it exists
-        try:
-            messageProcessor.preConnect(seed, host, FUZZER_DATA.port) 
-        except AttributeError:
-            pass
-    
-    # for TCP/UDP/RAW support
-    if FUZZER_DATA.proto == "tcp":
-        connection = socket.socket(socket_family,socket.SOCK_STREAM)
-        # Don't connect yet, until after we do any binding below
-    elif FUZZER_DATA.proto == "tls":
-        try:
-            _create_unverified_https_context = ssl._create_unverified_context
-        except AttributeError:
-            # Legacy Python that doesn't verify HTTPS certificates by default
-            pass
-        else:
-            # Handle target environment that doesn't support HTTPS verification
-            ssl._create_default_https_context = _create_unverified_https_context
-        tcpConnection = jjjjsocket.socket(socket_family,socket.SOCK_STREAM)
-        connection = ssl.wrap_socket(tcpConnection)
-        # Don't connect yet, until after we do any binding below
-    elif FUZZER_DATA.proto == "udp":
-        connection = socket.socket(socket_family,socket.SOCK_DGRAM)
-    # PROTO = dictionary of assorted L3 proto => proto number
-    # e.g. "icmp" => 1
-    elif FUZZER_DATA.proto in PROTO:
-        connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
-        connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
-        addr = (host,0)
-        try:
-            connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
-        except Exception as e:
-            print(e)
-            print("Unable to create raw socket, please verify that you have sudo access")
-            sys.exit(0)
-    elif FUZZER_DATA.proto == "L2raw":
-        # Raw sockets should bind to the interface specified by the user as the "host"
-        connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
-        connection.bind(addr)
-    else:
-        addr = (host,0)
-        try:
-            #test if it's a valid number 
-            connection = socket.socket(socket_family,socket.SOCK_RAW,int(FUZZER_DATA.proto)) 
-            connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
-        except Exception as e:
-            print(e)
-            print("Unable to create raw socket, please verify that you have sudo access")
-            sys.exit(0)
-        
-    if FUZZER_DATA.proto == "tcp" or FUZZER_DATA.proto == "udp" or FUZZER_DATA.proto == "tls":
-        # Specifying source port or address is only supported for tcp and udp currently
-        if FUZZER_DATA.sourcePort != -1:
-            # Only support right now for tcp or udp, but bind source port address to something
-            # specific if requested
-            if FUZZER_DATA.sourceIP != "" or FUZZER_DATA.sourceIP != "0.0.0.0":
-                connection.bind((FUZZER_DATA.sourceIP, fuzzerData.sourcePort))
-            else:
-                # User only specified a port, not an IP
-                connection.bind(('0.0.0.0', FUZZER_DATA.sourcePort))
-        elif FUZZER_DATA.sourceIP != "" and FUZZER_DATA.sourceIP != "0.0.0.0":
-            # No port was specified, so 0 should auto-select
-            connection.bind((FUZZER_DATA.sourceIP, 0))
-    if FUZZER_DATA.proto == "tcp" or FUZZER_DATA.proto == "tls":
-        # Now that we've had a chance to bind as necessary, connect
-        connection.connect(addr)
-    # -------------------------------------------------------------------------------------------- END OF POTENTIAL CREATE_CONNECTION FUNCTION
+    connection, addr = create_connection(host, seed, message_processor)
 
     i = 0   
     for i in range(0, len(FUZZER_DATA.messageCollection.messages)):
@@ -261,78 +345,14 @@ def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, se
         message.resetAlteredMessage()
 
         if message.isOutbound():
-            # Primarily used for deciding how to handle preFuzz/preSend callbacks
-            doesMessageHaveSubcomponents = len(message.subcomponents) > 1
-
-            # Get original subcomponents for outbound callback only once
-            originalSubcomponents = [subcomponent.getOriginalByteArray() for subcomponent in message.subcomponents]
-            
-            if doesMessageHaveSubcomponents:
-                # For message with subcomponents, call prefuzz on fuzzed subcomponents
-                for j in range(0, len(message.subcomponents)):
-                    subcomponent = message.subcomponents[j] 
-                    # Note: we WANT to fetch subcomponents every time on purpose
-                    # This way, if user alters subcomponent[0], it's reflected when
-                    # we call the function for subcomponent[1], etc
-                    actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
-                    prefuzz = messageProcessor.preFuzzSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, originalSubcomponents, actualSubcomponents))
-                    subcomponent.setAlteredByteArray(prefuzz)
-            else:
-                # If no subcomponents, call prefuzz on ENTIRE message
-                actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
-                prefuzz = messageProcessor.preFuzzProcess(actualSubcomponents[0], MessageProcessorExtraParams(i, -1, message.isFuzzed, originalSubcomponents, actualSubcomponents))
-                message.subcomponents[0].setAlteredByteArray(prefuzz)
-
-            # Skip fuzzing for seed == -1
-            if seed > -1:
-                # Now run the fuzzer for each fuzzed subcomponent
-                for subcomponent in message.subcomponents:
-                    if subcomponent.isFuzzed:
-                        radamsa = subprocess.Popen([RADAMSA, "--seed", str(seed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                        byteArray = subcomponent.getAlteredByteArray()
-                        (fuzzedByteArray, error_output) = radamsa.communicate(input=byteArray)
-                        fuzzedByteArray = bytearray(fuzzedByteArray)
-                        subcomponent.setAlteredByteArray(fuzzedByteArray)
-            
-            # Fuzzing has now been done if this message is fuzzed
-            # Always call preSend() regardless for subcomponents if there are any
-            if doesMessageHaveSubcomponents:
-                for j in range(0, len(message.subcomponents)):
-                    subcomponent = message.subcomponents[j] 
-                    # See preFuzz above - we ALWAYS regather this to catch any updates between
-                    # callbacks from the user
-                    actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
-                    presend = messageProcessor.preSendSubcomponentProcess(subcomponent.getAlteredByteArray(), MessageProcessorExtraParams(i, j, subcomponent.isFuzzed, originalSubcomponents, actualSubcomponents))
-                    subcomponent.setAlteredByteArray(presend)
-            # Always let the user make any final modifications pre-send, fuzzed or not
-            actualSubcomponents = [subcomponent.getAlteredByteArray() for subcomponent in message.subcomponents]
-            byteArrayToSend = messageProcessor.preSendProcess(message.getAlteredMessage(), MessageProcessorExtraParams(i, -1, message.isFuzzed, originalSubcomponents, actualSubcomponents))
-
-            if args.dumpraw:
-                loc = os.path.join(DUMPDIR,"%d-outbound-seed-%d"%(i,args.dumpraw))
-                if message.isFuzzed:
-                    loc+="-fuzzed"
-                with open(loc,"wb") as f:
-                    f.write(repr(str(byteArrayToSend))[1:-1])
-
-            sendPacket(connection, addr, byteArrayToSend)
+            send_fuzz_session_message(message, message_processor, seed, dump_raw)
         else: 
-            # Receiving packet from server
-            messageByteArray = message.getAlteredMessage()
-            data = receivePacket(connection,addr,len(messageByteArray))
-            if data == messageByteArray:
-                print("\tReceived expected response")
-            if logger != None:
-                logger.setReceivedMessageData(i, data)
+            receive_fuzz_session_message(message, connection, addr, logger, message_processor)
 
-            messageProcessor.postReceiveProcess(data, MessageProcessorExtraParams(i, -1, False, [messageByteArray], [data]))
-            if args.dumpraw:
-                loc = os.path.join(DUMPDIR,"%d-inbound-seed-%d"%(i,args.dumpraw))
-                with open(loc,"wb") as f:
-                    f.write(repr(str(data))[1:-1])
         if logger != None:  
             logger.setHighestMessageNumber(i)
         i += 1
+
     connection.close()
 
 #----------------------------------------------------
@@ -414,16 +434,16 @@ def fuzz(args: argparse.Namespace, testing: bool = False):
                 
                 if args.dumpraw:
                     print("\n\nPerforming single raw dump case: %d" % args.dumpraw)
-                    performRun(host, logger, messageProcessor, seed=args.dumpraw)  
+                    performRun(host, logger, messageProcessor, args.dumpraw,seed=args.dumpraw,)  
                 elif i == MIN_RUN_NUMBER-1:
                     print("\n\nPerforming test run without fuzzing...")
-                    performRun(host, logger, messageProcessor, seed=-1) 
+                    performRun(host, logger, messageProcessor, args.dumpraw, seed=-1 ) 
                 elif loop_len: 
                     print("\n\nFuzzing with seed %d" % (SEED_LOOP[i%loop_len]))
-                    performRun(host, logger, messageProcessor, seed=SEED_LOOP[i%loop_len]) 
+                    performRun(host, logger, messageProcessor, args.dumpraw, seed=SEED_LOOP[i%loop_len]) 
                 else:
                     print("\n\nFuzzing with seed %d" % (i))
-                    performRun(host, logger, messageProcessor, seed=i) 
+                    performRun(host, logger, messageProcessor, args.dumpraw, seed=i) 
                 #if --quiet, (logger==None) => AttributeError
                 if logAll:
                     try:
@@ -651,6 +671,7 @@ def parsePrepArgs(parser):
     
 def parseArguments():
     #TODO: add description/license/ascii art print out??
+    # FIXME: let fuzz run by default and prep indiciate a subcommand
     desc =  "======== The Mutiny Fuzzing Framework ==========" 
     epi = "==" * 24 + '\n'
     parser = argparse.ArgumentParser(description=desc,epilog=epi)
@@ -672,7 +693,5 @@ if __name__ == '__main__':
     args = parseArguments()
 
     args.func(args)
-
-
 
         
