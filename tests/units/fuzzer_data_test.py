@@ -234,8 +234,6 @@ class FuzzerDataTests(unittest.TestCase):
             inline = inlines[i]
             outline = outlines[i]
             self.assertEqual(inline, outline)
-        
         infile.close()
         outfile.close()
         os.remove('./tests/units/input_files/test_FuzzDataWrite.fuzzer')
-        
