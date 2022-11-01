@@ -40,11 +40,22 @@ class LogLastAndHaltException(Exception):
 class HaltException(Exception):
     pass
 
-# List of exceptions that can be thrown by a MessageProcessor
-class MessageProcessorExceptions(object):
-    all = [LogCrashException, AbortCurrentRunException, RetryCurrentRunException, LogAndHaltException, LogLastAndHaltException, HaltException]
+# Pause Mutiny until a Resume exception is raised
+# Typically Pause/Resume from a Monitor while a target is rebooting
+# Any exceptions besides Resume will be ignored while Paused
+class PauseFuzzingException(Exception):
+    pass
+
+# Resume Mutiny if paused
+# Must be raised by Monitor, as main thread will be paused
+class ResumeFuzzingException(Exception):
+    pass
 
 # This is raised by the fuzzer when the server has closed the connection gracefully
 class ConnectionClosedException(Exception):
     pass
 
+# List of exceptions that can be thrown by a MessageProcessor
+# ConnectionClosedException and ResumeFuzzingException intentionally excluded
+class MessageProcessorExceptions(object):
+    all = [LogCrashException, AbortCurrentRunException, RetryCurrentRunException, LogAndHaltException, LogLastAndHaltException, HaltException, PauseFuzzingException]

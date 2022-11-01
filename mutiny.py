@@ -340,19 +340,23 @@ def sigint_handler(signal: int, frame: object):
     print("\nSIGINT received, stopping\n")
     sys.exit(0)
 
-def raise_last_monitor_event_if_any():
+def raise_next_monitor_event_if_any(is_paused):
     # Check the monitor queue for exceptions generated during run
     if not MONITOR.queue.empty():
         print('Monitor event detected')
-        # If Monitor sends a bunch of exceptions, we just take the last one
-        if MONITOR.queue.qsize() > 1:
-            print(f'Monitor has {MONITOR.queue.qsize()} exceptions enqueued, ignoring all but last')
+        exception = MONITOR.queue.get()
         
-        last_exception = None
-        while not MONITOR.queue.empty():
-            last_exception = MONITOR.queue.get()   
-        
-        raise last_exception
+        if is_paused:
+            if isinstance(exception, PauseFuzzingException):
+                # Duplicate pauses are fine, a no-op though
+                pass
+            elif not isinstance(exception, ResumeFuzzingException):
+                # Any other exception besides resume after pause makes no sense
+                print(f'Received exception while Mutiny was paused, can\'t handle properly:')
+                print(repr(exception))
+                print('Exception will be ignored and discarded.')
+                return
+        raise exception
 
 def fuzz(args: argparse.Namespace):
     # initialize fuzzing environment according to user provided arguments
@@ -364,15 +368,28 @@ def fuzz(args: argparse.Namespace):
     host = args.target_host
     isReproduce = args.quiet
     logAll = args.logAll if not isReproduce else False
+    is_paused = False
 
     while True:
         lastMessageCollection = deepcopy(FUZZER_DATA.messageCollection)
         wasCrashDetected = False
-        print("\n** Sleeping for %.3f seconds **" % args.sleeptime)
-        time.sleep(args.sleeptime)
+        if not is_paused and args.sleeptime > 0.0:
+            print("\n** Sleeping for %.3f seconds **" % args.sleeptime)
+            time.sleep(args.sleeptime)
 
         try:
+            # Check for any exceptions from Monitor
+            # Intentionally do this before and after a run in case we have back-to-back exceptions
+            # (Example: Crash, then Pause, then Resume
+            raise_next_monitor_event_if_any(is_paused)
+            
+            if is_paused:
+                # Busy wait, might want to do something more clever with Condition or Event later
+                time.sleep(0.5)
+                continue
+            
             try:
+                
                 if args.dumpraw:
                     print("\n\nPerforming single raw dump case: %d" % args.dumpraw)
                     performRun(host, logger, messageProcessor, seed=args.dumpraw)  
@@ -390,11 +407,7 @@ def fuzz(args: argparse.Namespace):
                     try:
                         logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                     except AttributeError:
-                        pass
-            
-                # Check for any exceptions from Monitor
-                raise_last_monitor_event_if_any()
-
+                        pass 
             except Exception as e:
                 if logAll:
                     try:
@@ -409,8 +422,23 @@ def fuzz(args: argparse.Namespace):
                 else:
                     exceptionProcessor.processException(e)
                     # Will not get here if processException raises another exception
-                    print("Exception ignored: %s" % (str(e)))
+                    print("Exception ignored: %s" % (repr(e)))
             
+            # Check for any exceptions from Monitor
+            # Intentionally do this before and after a run in case we have back-to-back exceptions
+            # (Example: Crash, then Pause, then Resume
+            raise_next_monitor_event_if_any(is_paused)
+        except PauseFuzzingException as e:
+            print('Mutiny received a pause exception, pausing until monitor sends a resume...')
+            is_paused = True
+
+        except ResumeFuzzingException as e:
+            if is_paused:
+                print('Mutiny received a resume exception, continuing to run.')
+                is_paused = False
+            else:
+                print('Mutiny received a resume exception but wasn\'t paused, ignoring and continuing.')
+
         except LogCrashException as e:
             if failureCount == 0:
                 try:
