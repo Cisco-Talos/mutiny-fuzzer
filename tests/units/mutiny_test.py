@@ -30,10 +30,10 @@ class TestMutiny(unittest.TestCase):
             if test_type == 'tcp': 
                 test_conn.listen()
                 conn, mutiny_addr = test_conn.accept()
-                received_data['data'] = conn.recv(4)
+                received_data['data'] = conn.recv(len(out_packet_data))
                 conn.close()
             else:
-                received_data['data'], addr = test_conn.recvfrom(4)
+                received_data['data'], addr = test_conn.recvfrom(len(out_packet_data))
             test_conn.close()
 
         received_data = {}
@@ -70,10 +70,72 @@ class TestMutiny(unittest.TestCase):
         self.assertEqual(received_data['data'], out_packet_data)
 
 
-
-
     def test_receivePacket(self):
-        pass
+        def handle_connection(test_type):
+            test_conn = socket.socket(socket_family, socket_type)
+            test_conn.bind((test_ip, test_port))
+            if test_type == 'tcp': 
+                test_conn.listen()
+                conn, mutiny_addr = test_conn.accept()
+                conn.recv
+                conn.send(out_packet_data)
+            else:
+                test_conn.sendto(out_packet_data,(mutiny_ip, mutiny_port))
+
+            conn.close()
+            test_conn.close()
+
+        mutiny.FUZZER_DATA = FuzzerData()
+        mutiny.FUZZER_DATA.receiveTimeout = 3.0
+        test_ip = '127.0.0.1'
+        test_port = 8888
+        mutiny_ip = '127.0.0.1'
+        mutiny_port = 4000
+        socket_family = socket.AF_INET
+        socket_type = socket.SOCK_STREAM
+        mutiny_conn = socket.socket(socket_family, socket_type)
+        mutiny_conn.bind((mutiny_ip, mutiny_port))
+        out_packet_data = bytes('test', 'utf-8')
+
+        # tcp test
+        conn_thread = threading.Thread(target=handle_connection, args=('tcp',))
+        conn_thread.start()
+        sleep(1) # avoid race, allow handle_connections to bind and listen
+        test_addr = (test_ip, test_port)
+        mutiny_conn.connect(test_addr)
+        response = mutiny.receivePacket(mutiny_conn, test_addr, len(out_packet_data))
+        conn_thread.join()
+        self.assertEqual(response, out_packet_data)
+        mutiny_conn.close()
+        ''' # FIXME: SOCK_RAW requires root and the other protocols aren't supported on macOS, should move to linux vm and see which protocol we can use
+        # non-tcp test 
+        test_port = 9998 # to avoid issues binding to same port in short time
+        socket_type = socket.SOCK_RAW
+        test_addr = (test_ip, test_port)
+        conn_thread = threading.Thread(target=handle_connection, args=('non-tcp',))
+        conn_thread.start()
+        mutiny_conn = socket.socket(socket_family, socket_type)
+        response = mutiny.receivePacket(mutiny_conn, test_addr, len(out_packet_data))
+        conn_thread.join()
+        mutiny_conn.close()
+        self.assertEqual(response, out_packet_data)
+        '''
+        # greater than 4096
+        mutiny_port = 4001
+        test_port = 8889
+        mutiny_conn = socket.socket(socket_family, socket_type)
+        mutiny_conn.bind((mutiny_ip, mutiny_port))
+        out_packet_data = bytes('A' * 4096 + 'test', 'utf-8')
+        conn_thread = threading.Thread(target=handle_connection, args=('tcp',))
+        conn_thread.start()
+        sleep(1) # avoid race, allow handle_connections to bind and listen
+        test_addr = (test_ip, test_port)
+        mutiny_conn.connect(test_addr)
+        response = mutiny.receivePacket(mutiny_conn, test_addr, len(out_packet_data))
+        conn_thread.join()
+        self.assertEqual(response, out_packet_data)
+        mutiny_conn.close()
+
 
     def test_performRun(self):
         pass
