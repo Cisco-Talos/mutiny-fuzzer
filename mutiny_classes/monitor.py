@@ -38,6 +38,8 @@
 #
 #------------------------------------------------------------------
 
+from mutiny_classes.mutiny_exceptions import *
+
 class Monitor(object):
     # This function will run asynchronously in a different thread to monitor the host
     def monitorTarget(self, targetIP, targetPort, signalMain):
@@ -45,8 +47,12 @@ class Monitor(object):
         # while True:
         #   read file, etc
         #   if errorConditionHasOccurred:
-        #       signalMain()
+        #       exception = LogCrashException('Information about the crash')
+        #       exception.extra_data = 'Can add arbitrary Python objects or other data as members'
+        #       signalMain(LogCrashException(exception)
         #
         # Calling signalMain() at any time will indicate to Mutiny
         # that the target has crashed and a crash should be logged
+        #
+        # Exception will be passed to exception processor
         pass

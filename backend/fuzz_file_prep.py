@@ -77,7 +77,7 @@ def processInputFile():
     '''
 
     if not os.path.isfile(INPUT_FILE_PATH):
-        print_error('Cannot read input {INPUT_FILE_PATH}')
+        print_error(f'Cannot read input {INPUT_FILE_PATH}')
         exit()
 
     with open(INPUT_FILE_PATH, 'r') as inputFile:

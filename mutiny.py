@@ -356,16 +356,29 @@ def getRunNumbersFromArgs(strArgs: str):
         return (int(strArgs),int(strArgs)) 
 
 #----------------------------------------------------
-# Set up signal handler for CTRL+C and signals from child monitor thread
-# since this is the same signal, we use the monitor.crashEvent flag()
-# to differentiate between a CTRL+C and a interrupt_main() call from child 
+# Set up signal handler for CTRL+C
 def sigint_handler(signal: int, frame: object):
-    if not MONITOR.crashEvent.isSet():
-            # No event = quit
-            # Quit on ctrl-c
-            print("\nSIGINT received, stopping\n")
-            sys.exit(0)
+    # Quit on ctrl-c
+    print("\nSIGINT received, stopping\n")
+    sys.exit(0)
 
+def raise_next_monitor_event_if_any(is_paused):
+    # Check the monitor queue for exceptions generated during run
+    if not MONITOR.queue.empty():
+        print('Monitor event detected')
+        exception = MONITOR.queue.get()
+        
+        if is_paused:
+            if isinstance(exception, PauseFuzzingException):
+                # Duplicate pauses are fine, a no-op though
+                pass
+            elif not isinstance(exception, ResumeFuzzingException):
+                # Any other exception besides resume after pause makes no sense
+                print(f'Received exception while Mutiny was paused, can\'t handle properly:')
+                print(repr(exception))
+                print('Exception will be ignored and discarded.')
+                return
+        raise exception
 
 def fuzz(args: argparse.Namespace, testing: bool = False):
     # initialize fuzzing environment according to user provided arguments
@@ -377,15 +390,28 @@ def fuzz(args: argparse.Namespace, testing: bool = False):
     host = args.target_host
     isReproduce = args.quiet
     logAll = args.logAll if not isReproduce else False
+    is_paused = False
 
     while True:
         lastMessageCollection = deepcopy(FUZZER_DATA.messageCollection)
         wasCrashDetected = False
-        print("\n** Sleeping for %.3f seconds **" % args.sleeptime)
-        time.sleep(args.sleeptime)
+        if not is_paused and args.sleeptime > 0.0:
+            print("\n** Sleeping for %.3f seconds **" % args.sleeptime)
+            time.sleep(args.sleeptime)
 
         try:
+            # Check for any exceptions from Monitor
+            # Intentionally do this before and after a run in case we have back-to-back exceptions
+            # (Example: Crash, then Pause, then Resume
+            raise_next_monitor_event_if_any(is_paused)
+            
+            if is_paused:
+                # Busy wait, might want to do something more clever with Condition or Event later
+                time.sleep(0.5)
+                continue
+            
             try:
+                
                 if args.dumpraw:
                     print("\n\nPerforming single raw dump case: %d" % args.dumpraw)
                     performRun(host, logger, messageProcessor, seed=args.dumpraw)  
@@ -403,19 +429,9 @@ def fuzz(args: argparse.Namespace, testing: bool = False):
                     try:
                         logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                     except AttributeError:
-                        pass
-                     
+                        pass 
             except Exception as e:
-                if MONITOR.crashEvent.isSet():
-                    print("Crash event detected")
-                    try:
-                        logger.outputLog(i, FUZZER_DATA.messageCollection, "Crash event detected")
-                        #exit()
-                    except AttributeError: 
-                        pass
-                    MONITOR.crashEvent.clear()
-
-                elif logAll:
+                if logAll:
                     try:
                         logger.outputLog(i, FUZZER_DATA.messageCollection, "LogAll ")
                     except AttributeError:
@@ -428,12 +444,27 @@ def fuzz(args: argparse.Namespace, testing: bool = False):
                 else:
                     exceptionProcessor.processException(e)
                     # Will not get here if processException raises another exception
-                    print("Exception ignored: %s" % (str(e)))
+                    print("Exception ignored: %s" % (repr(e)))
             
+            # Check for any exceptions from Monitor
+            # Intentionally do this before and after a run in case we have back-to-back exceptions
+            # (Example: Crash, then Pause, then Resume
+            raise_next_monitor_event_if_any(is_paused)
+        except PauseFuzzingException as e:
+            print('Mutiny received a pause exception, pausing until monitor sends a resume...')
+            is_paused = True
+
+        except ResumeFuzzingException as e:
+            if is_paused:
+                print('Mutiny received a resume exception, continuing to run.')
+                is_paused = False
+            else:
+                print('Mutiny received a resume exception but wasn\'t paused, ignoring and continuing.')
+
         except LogCrashException as e:
             if failureCount == 0:
                 try:
-                    print("MessageProcessor detected a crash")
+                    print("Mutiny detected a crash")
                     logger.outputLog(i, FUZZER_DATA.messageCollection, str(e))
                 except AttributeError:  
                     pass   
@@ -563,7 +594,7 @@ def processorSetup( fuzzerFolder: str, outputDataFolderPath: str, args: argparse
 
     ########## Launch child monitor thread
         ### monitor.task = spawned thread
-        ### monitor.crashEvent = threading.Event()
+        ### monitor.queue = enqueued exceptions
     MONITOR = procDirector.startMonitor(args.target_host,FUZZER_DATA.port)
 
     #! make it so logging message does not appear if reproducing (i.e. -r x-y cmdline arg is set)

@@ -41,6 +41,7 @@
 import imp
 import sys
 import os.path
+import queue
 import threading
 import socket
 
@@ -81,22 +82,23 @@ class ProcDirector(object):
     
     class MonitorWrapper(object):
         def __init__(self, targetIP, targetPort, monitor):
-            # crashDetectedEvent signals main thread on a detected crash,
-            # interrupt_main() and CTRL+C, otherwise raise the same signal
+            # This queue is read from the main thread after each fuzz run
+            # If it contains an exception, that is passed to the exception processor
+            self.queue = queue.SimpleQueue()
             # monitor is the actual user custom monitor that implements monitorTarget
             self.monitor = monitor
-            self.crashEvent = threading.Event()
+            # Immediately start monitor and allow it to run until Mutiny stops
             self.task = threading.Thread(target=self.monitor.monitorTarget,args=(targetIP,targetPort,self.signalCrashDetectedOnMain))
+            # Daemon thread won't stop main thread from exiting
             self.task.daemon = True
             self.task.start()
 
         # Don't override this function
-        def signalCrashDetectedOnMain(self):
-            # Raises a KeyboardInterrupt exception on main thread
-            self.crashEvent.set()
-            # Ugly but have to import here for this to work in monitorTarget on a custom processor
-            import _thread
-            _thread.interrupt_main()
+        def signalCrashDetectedOnMain(self, exception: Exception):
+            if not isinstance(exception, Exception):
+                print('Error: Invalid monitor behavior - signalMain() must be sent an exception, usually a Mutiny exception.')
+                sys.exit(-1)
+            self.queue.put(exception)
     
     def startMonitor(self, host, port):
         self.monitorWrapper = self.MonitorWrapper(host, port, self.monitor())
