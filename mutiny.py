@@ -139,7 +139,7 @@ def get_addr(host):
         addr = (host,0)
         socket_family = socket.AF_PACKET
     else:
-        addrs = socket.getaddrinfo(host,fuzzer_data.port)
+        addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
         host = addrs[0][4][0]
         if host == "::1":
             host = "127.0.0.1"
@@ -148,17 +148,17 @@ def get_addr(host):
         # don't think it's worth using regex for this, since the user
         # will have to actively go out of their way to subvert this.
         if "." in host:
-            socket_family = socket.af_inet
-            addr = (host,fuzzer_data.port)
+            socket_family = socket.AF_INET
+            addr = (host,FUZZER_DATA.port)
         elif ":" in host:
-            socket_family = socket.af_inet6 
-            addr = (host,fuzzer_data.port)
+            socket_family = socket.AF_INET6 
+            addr = (host,FUZZER_DATA.port)
         else:
-            socket_family = socket.af_unix
+            socket_family = socket.AF_UNIX
             addr = (host)
         #just in case filename is like "./asdf" !=> af_inet
         if "/" in host:
-            socket_family = socket.af_unix
+            socket_family = socket.AF_UNIX
             addr = (host)
 
     return host, addr, socket_family
@@ -179,20 +179,21 @@ def bind_to_interface(connection, addr=None):
             # No port was specified, so 0 should auto-select
             connection.bind((FUZZER_DATA.sourceIP, 0))
 
-    return connection
 
-def connect_to_tcp_socket(host, seed, socket_family):
+def connect_to_tcp_socket(host, seed):
     host, addr, socket_family = get_addr(host)
     connection = socket.socket(socket_family, socket.SOCK_STREAM)
     bind_to_interface(connection)
     connection.connect(addr)
+    return connection, addr
 
-def connect_to_udp_socket(host, seed, socket_family):
+def connect_to_udp_socket(host, seed):
     host, addr, socket_family = get_addr(host)
     connection = socket.socket(socket_family, socket.SOCK_DGRAM)
     connection = bind_to_interface(connection)
+    return connection, addr
 
-def connect_to_tls_socket(host,seed,message_processor):
+def connect_to_tls_socket(host, seed):
     host, addr, socket_family = get_addr(host)
     try:
         _create_unverified_https_context = ssl._create_unverified_context
@@ -207,13 +208,13 @@ def connect_to_tls_socket(host,seed,message_processor):
     bind_to_interface(connection)
     connection.connect(addr)
     
-    return connection
+    return connection, addr
 
-def connect_to_raw_socket(host,seed,message_processor):
+def connect_to_raw_socket(host, seed):
     host, addr, socket_family = get_addr(host)
     connection = socket.socket(socket_family,socket.SOCK_RAW, 0x0300)
     bind_to_interface(addr, connection)
-    return connection
+    return connection, addr
 
 
 def create_connection(host, seed, message_processor):
@@ -234,16 +235,16 @@ def create_connection(host, seed, message_processor):
         pass
 
     if FUZZER_DATA.proto == 'tcp':
-        connection = connect_to_tcp_socket(host)
+        connection, addr = connect_to_tcp_socket(host, seed)
     elif FUZZER_DATA.proto == 'udp':
-        connection = connect_to_udp_socket(host)
+        connection, addr = connect_to_udp_socket(host, seed)
     elif FUZZER_DATA.proto == 'tls':
-        connection = connect_to_tls_socket(host)
+        connection, addr = connect_to_tls_socket(host, seed)
     # must be a raw socket since we already checked if protocol was supported
     else :
-        connection = connect_to_raw_socket(host)
+        connection, addr = connect_to_raw_socket(host, seed)
 
-    return connection
+    return connection, addr
 
 def fuzz_subcomponents(message, seed):
     '''
@@ -347,7 +348,7 @@ def performRun(host: str, logger: Logger, message_processor: MessageProcessor, d
         if message.isOutbound():
             send_fuzz_session_message(message, message_processor, seed, dump_raw)
         else: 
-            receive_fuzz_session_message(message, connection, addr, logger, message_processor)
+            receive_fuzz_session_message(message, connection, addr, logger, message_processor, dump_raw)
 
         if logger != None:  
             logger.setHighestMessageNumber(i)
