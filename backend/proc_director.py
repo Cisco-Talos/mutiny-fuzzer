@@ -110,9 +110,14 @@ class ProcDirector(object):
         def monitorTarget(self, monitor, *args):
             try:
                 monitor(*args)
+                # Really shouldn't reach this
+                print_warning('Halting Mutiny - Monitor stopped (no errors) but it should run indefinitely.')
+                
+                # Can't sys.exit() inside thread:
+                os.kill(os.getpid(), signal.SIGINT)
             except Exception as e:
                 # Catch if Monitor dies and halt Mutiny
-                print_error('\nReceived exception from Monitor, backtrace:\n')
+                print_error('\nHalting Mutiny - Received exception from Monitor, backtrace:\n')
                 traceback.print_exc()
                 print()
                 # Can't sys.exit() inside thread:
