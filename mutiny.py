@@ -333,13 +333,13 @@ def getRunNumbersFromArgs(strArgs: str):
 # Set up signal handler for CTRL+C
 def sigint_handler(signal: int, frame: object):
     # Quit on ctrl-c
-    print("\nSIGINT received, stopping\n")
+    print_warning("\nSIGINT received, stopping\n")
     sys.exit(0)
 
 def raise_next_monitor_event_if_any(is_paused):
     # Check the monitor queue for exceptions generated during run
     if not MONITOR.queue.empty():
-        print('Monitor event detected')
+        print_warning('Monitor event detected')
         exception = MONITOR.queue.get()
         
         if is_paused:
@@ -348,9 +348,9 @@ def raise_next_monitor_event_if_any(is_paused):
                 pass
             elif not isinstance(exception, ResumeFuzzingException):
                 # Any other exception besides resume after pause makes no sense
-                print(f'Received exception while Mutiny was paused, can\'t handle properly:')
+                print_warning(f'Received exception while Mutiny was paused, can\'t handle properly:')
                 print(repr(exception))
-                print('Exception will be ignored and discarded.')
+                print_warning('Exception will be ignored and discarded.')
                 return
         raise exception
 
@@ -418,27 +418,27 @@ def fuzz(args: argparse.Namespace):
                 else:
                     exceptionProcessor.processException(e)
                     # Will not get here if processException raises another exception
-                    print("Exception ignored: %s" % (repr(e)))
+                    print_warning("Exception ignored: %s" % (repr(e)))
             
             # Check for any exceptions from Monitor
             # Intentionally do this before and after a run in case we have back-to-back exceptions
             # (Example: Crash, then Pause, then Resume
             raise_next_monitor_event_if_any(is_paused)
         except PauseFuzzingException as e:
-            print('Mutiny received a pause exception, pausing until monitor sends a resume...')
+            print_warning('Mutiny received a pause exception, pausing until monitor sends a resume...')
             is_paused = True
 
         except ResumeFuzzingException as e:
             if is_paused:
-                print('Mutiny received a resume exception, continuing to run.')
+                print_success('Mutiny received a resume exception, continuing to run.')
                 is_paused = False
             else:
-                print('Mutiny received a resume exception but wasn\'t paused, ignoring and continuing.')
+                print_warning('Mutiny received a resume exception but wasn\'t paused, ignoring and continuing.')
 
         except LogCrashException as e:
             if failureCount == 0:
                 try:
-                    print("Mutiny detected a crash")
+                    print_success("Mutiny detected a crash")
                     logger.outputLog(i, FUZZER_DATA.messageCollection, str(e))
                 except AttributeError:  
                     pass   
@@ -455,26 +455,26 @@ def fuzz(args: argparse.Namespace):
         except AbortCurrentRunException as e:
             # Give up on the run early, but continue to the next test
             # This means the run didn't produce anything meaningful according to the processor
-            print("Run aborted: %s" % (str(e)))
+            print_warning("Run aborted: %s" % (str(e)))
         
         except RetryCurrentRunException as e:
             # Same as AbortCurrentRun but retry the current test rather than skipping to next
-            print("Retrying current run: %s" % (str(e)))
+            print_warning("Retrying current run: %s" % (str(e)))
             # Slightly sketchy - a continue *should* just go to the top of the while without changing i
             continue
             
         except LogAndHaltException as e:
             if logger:
                 logger.outputLog(i, FUZZER_DATA.messageCollection, str(e))
-                print("Received LogAndHaltException, logging and halting")
+                print_warning("Received LogAndHaltException, logging and halting")
             else:
-                print("Received LogAndHaltException, halting but not logging (quiet mode)")
+                print_warning("Received LogAndHaltException, halting but not logging (quiet mode)")
             exit()
             
         except LogLastAndHaltException as e:
             if logger:
                 if i > MIN_RUN_NUMBER:
-                    print("Received LogLastAndHaltException, logging last run and halting")
+                    print_warning("Received LogLastAndHaltException, logging last run and halting")
                     if MIN_RUN_NUMBER == MAX_RUN_NUMBER:
                         #in case only 1 case is run
                         logger.outputLastLog(i, lastMessageCollection, str(e))
@@ -482,22 +482,22 @@ def fuzz(args: argparse.Namespace):
                     else:
                         logger.outputLastLog(i-1, lastMessageCollection, str(e))
                 else:
-                    print("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
+                    print_warning("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
             else:
-                print("Received LogLastAndHaltException, halting but not logging (quiet mode)")
+                print_warning("Received LogLastAndHaltException, halting but not logging (quiet mode)")
             exit()
 
         except HaltException as e:
-            print("Received HaltException halting")
+            print_warning("Received HaltException halting")
             exit()
 
         if wasCrashDetected:
             if failureCount < FUZZER_DATA.failureThreshold:
-                print("Failure %d of %d allowed for seed %d" % (failureCount, FUZZER_DATA.failureThreshold, i))
+                print_error("Failure %d of %d allowed for seed %d" % (failureCount, FUZZER_DATA.failureThreshold, i))
                 print("The test run didn't complete, continuing after %d seconds..." % (FUZZER_DATA.failureTimeout))
                 time.sleep(FUZZER_DATA.failureTimeout)
             else:
-                print("Failed %d times, moving to next test." % (failureCount))
+                print_warning("Failed %d times, moving to next test." % (failureCount))
                 failureCount = 0
                 i += 1
         else:
@@ -523,7 +523,8 @@ def fuzzSetup(args: argparse.Namespace):
 
     #Check for dependency binaries
     if not os.path.exists(RADAMSA):
-        sys.exit("Could not find radamsa in %s... did you build it?" % RADAMSA)
+        print_error("Could not find radamsa in %s... did you build it?" % RADAMSA)
+        sys.exit(-1)
 
 
     outputDataFolderPath = os.path.join("%s_%s" % (os.path.splitext(fuzzerFilePath)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
@@ -587,7 +588,7 @@ def processorSetup( fuzzerFolder: str, outputDataFolderPath: str, args: argparse
             try:
                 os.mkdir("dumpraw")
             except:
-                print("Unable to create dumpraw dir")
+                print_error("Unable to create dumpraw dir")
                 pass
 
     exceptionProcessor = procDirector.exceptionProcessor()
