@@ -51,7 +51,7 @@ class ExceptionProcessor(object):
     # Determine how to handle a given exception
     # Raise the exceptions defined in mutiny_exceptions to cause Mutiny
     # to do different things based on what has occurred
-    def processException(self, exception):
+    def process_exception(self, exception):
         print(f'{type(exception)}: {str(exception)}')
         if isinstance(exception, socket.error):
             if exception.errno == errno.ECONNREFUSED:

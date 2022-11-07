@@ -50,57 +50,57 @@ from threading import Event
 from mutiny_classes.mutiny_exceptions import MessageProcessorExceptions
 
 class ProcDirector(object):
-    def __init__(self, processDir):
-        self.messageProcessor = None
-        self.exceptionProcessor = None
-        self.exceptionList = None
+    def __init__(self, process_dir):
+        self.message_processor = None
+        self.exception_processor = None
+        self.exception_list = None
         self.monitor = None
         mod_name = ""  
-        self.classDir = "mutiny_classes"
+        self.class_dir = "mutiny_classes"
         
-        defaultDir = os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir),self.classDir)
-        filelist = [ "exception_processor","message_processor","monitor" ]
+        default_dir = os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir),self.class_dir)
+        file_list = [ "exception_processor","message_processor","monitor" ]
         
         # Load all processors, attempting to do custom first then default
-        for filename in filelist:
+        for file_name in file_list:
             try:
                 # Attempt to load custom processor
-                filepath = os.path.join(processDir, "{0}.py".format(filename))
-                imp.load_source(filename, filepath)
-                print(("Loaded custom processor: {0}".format(filepath)))
+                file_path = os.path.join(process_dir, "{0}.py".format(file_name))
+                imp.load_source(file_name, file_path)
+                print(("Loaded custom processor: {0}".format(file_path)))
             except IOError:
                 # On failure, load default
-                filepath = os.path.join(defaultDir, "{0}.py".format(filename))
-                imp.load_source(filename, filepath)
-                print(("Loaded default processor: {0}".format(filepath)))
+                file_path = os.path.join(default_dir, "{0}.py".format(file_name))
+                imp.load_source(file_name, file_path)
+                print(("Loaded default processor: {0}".format(file_path)))
                 
         # Set all the appropriate classes to the appropriate modules
-        self.messageProcessor = sys.modules['message_processor'].MessageProcessor
-        self.exceptionProcessor = sys.modules['exception_processor'].ExceptionProcessor
+        self.message_processor = sys.modules['message_processor'].MessageProcessor
+        self.exception_processor = sys.modules['exception_processor'].ExceptionProcessor
         self.monitor = sys.modules['monitor'].Monitor 
-        self.crashQueue = Event()
+        self.crash_queue = Event()
     
     class MonitorWrapper(object):
-        def __init__(self, targetIP, targetPort, monitor):
+        def __init__(self, target_ip, target_port, monitor):
             # This queue is read from the main thread after each fuzz run
             # If it contains an exception, that is passed to the exception processor
             self.queue = queue.SimpleQueue()
-            # monitor is the actual user custom monitor that implements monitorTarget
+            # monitor is the actual user custom monitor that implements monitor_target
             self.monitor = monitor
             # Immediately start monitor and allow it to run until Mutiny stops
-            self.task = threading.Thread(target=self.monitor.monitorTarget,args=(targetIP,targetPort,self.signalCrashDetectedOnMain))
+            self.task = threading.Thread(target=self.monitor.monitor_target,args=(target_ip,target_port,self.signal_crash_detected_on_main))
             # Daemon thread won't stop main thread from exiting
             self.task.daemon = True
             self.task.start()
 
         # Don't override this function
-        def signalCrashDetectedOnMain(self, exception: Exception):
+        def signal_crash_detected_on_main(self, exception: Exception):
             if not isinstance(exception, Exception):
                 print('Error: Invalid monitor behavior - signalMain() must be sent an exception, usually a Mutiny exception.')
                 sys.exit(-1)
             self.queue.put(exception)
     
-    def startMonitor(self, host, port):
-        self.monitorWrapper = self.MonitorWrapper(host, port, self.monitor())
-        return self.monitorWrapper
+    def start_monitor(self, host, port):
+        self.monitor_wrapper = self.MonitorWrapper(host, port, self.monitor())
+        return self.monitor_wrapper
         

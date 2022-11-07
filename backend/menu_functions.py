@@ -36,19 +36,19 @@
 
 # used during the mutiny_prep.py .fuzzer generation
 # asks for and returns a boolean
-def prompt(question, answers=["y", "n"], defaultIndex=None):
+def prompt(question, answers=["y", "n"], default_index=None):
     answer = ""
     while answer not in answers:
         print("%s (%s)" % (question, "/".join(answers)))
-        if defaultIndex != None:
-            answer = input("Default %s: " % (answers[defaultIndex]))
+        if default_index != None:
+            answer = input("Default %s: " % (answers[default_index]))
         else:
             answer = input("No default: ")
         # Pretty up responses with a newline after
         print("")
 
-        if defaultIndex != None and answer == "":
-            answer = answers[defaultIndex]
+        if default_index != None and answer == "":
+            answer = answers[default_index]
             break
 
     if len(answers) == 2 and answers[0] == "y" and answers[1] == "n":
@@ -61,20 +61,20 @@ def prompt(question, answers=["y", "n"], defaultIndex=None):
 
 # used during the mutiny_prep.py .fuzzer generation
 # asks for and returns an integer
-def promptInt(question, defaultResponse=None, allowNo=False):
+def prompt_int(question, default_response=None, allow_no=False):
     answer = None
 
     while answer == None:
         print("%s" % (question))
         try:
-            if defaultResponse:
-                answer = input("Default {0}: ".format(defaultResponse)).strip()
+            if default_response:
+                answer = input("Default {0}: ".format(default_response)).strip()
             else:
                 answer = input("No default: ")
             # Pretty up responses with a newline after
             print("")
             
-            if allowNo and (answer == "n" or answer == ""):
+            if allow_no and (answer == "n" or answer == ""):
                 return None
             else:
                 answer = int(answer)
@@ -82,36 +82,36 @@ def promptInt(question, defaultResponse=None, allowNo=False):
         except ValueError:
             answer = None
 
-        if answer == None and defaultResponse:
-            answer = defaultResponse
+        if answer == None and default_response:
+            answer = default_response
     
     return answer
 
 # Return input given as string if it passes the validationFunction test, else return None.
 # If there is not validationFunc given, only return string.
-# Return default repsonse if empty, the defaultResponse or Ctrl-C are given.
-def promptString(question, defaultResponse="n", validateFunc=None):
-    retStr = ""
-    while not retStr or not len(retStr): 
-        if defaultResponse:
-            inputStr = input("%s\nDefault %s: " % (question, defaultResponse))
+# Return default repsonse if empty, the default_response or Ctrl-C are given.
+def prompt_string(question, default_response="n", validate_func=None):
+    ret_str = ""
+    while not ret_str or not len(ret_str): 
+        if default_response:
+            input_str = input("%s\nDefault %s: " % (question, default_response))
         else:
-            inputStr = input("%s\nNo default: " % (question))
+            input_str = input("%s\nNo default: " % (question))
             
         # Pretty up responses with a newline after
         print("")
-        if defaultResponse and (inputStr == defaultResponse or not len(inputStr)):
-            return defaultResponse    
+        if default_response and (input_str == default_response or not len(input_str)):
+            return default_response    
         # If we're looking for a specific format, validate
         # Validate functions must return None on failure of validation,
         # and != None on success
-        if validateFunc:
-            if validateFunc(inputStr):
-                retStr = inputStr 
+        if validate_func:
+            if validate_func(input_str):
+                ret_str = input_str 
 
-    return retStr 
+    return ret_str 
 
-def validateNumberRange(inputStr: str, flattenList: bool = False):
+def validate_number_range(input_str: str, flatten_list: bool = False):
     '''
     Takes a string of numbers, seperated via commas
     or by hyphens, and generates an appropriate list of
@@ -122,27 +122,27 @@ def validateNumberRange(inputStr: str, flattenList: bool = False):
 
     If given an invalid number string, returns None
     '''
-    retList = []
-    tmpList = [_f for _f in inputStr.split(',') if _f]
+    ret_list = []
+    tmp_list = [_f for _f in input_str.split(',') if _f]
 
     # Print msg if invalid chars/typo detected
-    for num in tmpList:
+    for num in tmp_list:
         try:
-            retList.append(int(num))
+            ret_list.append(int(num))
         except ValueError:
             if '-' in num:
-                intRange = num.split('-')                  
+                int_range = num.split('-')                  
                 # Invalid x-y-z
-                if len(intRange) > 2:
+                if len(int_range) > 2:
                     print("Invalid range given")
                     return None
                 try:
-                    if not flattenList:
-                        # Append iterator with bounds = intRange
-                        retList.append(range(int(intRange[0]),int(intRange[1])+1)) 
+                    if not flatten_list:
+                        # Append iterator with bounds = int_range
+                        ret_list.append(range(int(int_range[0]),int(int_range[1])+1)) 
                     else:
                         # Append individual elements
-                        retList.extend(list(range(int(intRange[0]),int(intRange[1])+1))) 
+                        ret_list.extend(list(range(int(int_range[0]),int(int_range[1])+1))) 
                 except TypeError:
                     print("Invalid range given")
                     return None
@@ -150,8 +150,8 @@ def validateNumberRange(inputStr: str, flattenList: bool = False):
                 print("Invalid number given")
                 return None
     # All elements in the range are valid integers or integer ranges
-    if flattenList:
+    if flatten_list:
         # If list is flattened, every element is an integer
-        retList = sorted(list(set(retList)))
-    return retList 
+        ret_list = sorted(list(set(ret_list)))
+    return ret_list 
 
