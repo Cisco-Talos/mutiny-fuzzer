@@ -123,7 +123,7 @@ def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
     return response
 
 # Parse user-input hostname into IPv4/v6 address or DNS resolution, depending
-def resolveHostnameOrIp(hostname, port):
+def resolveHostnameOrIp(host, port):
     addrs = socket.getaddrinfo(host, port)
     host = addrs[0][4][0]
     if host == "::1":
@@ -139,7 +139,7 @@ def resolveHostnameOrIp(hostname, port):
         socket_family = socket.AF_INET6 
         addr = (host, port)
     
-    return addr
+    return socket_family, addr
 
 def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, seed: int = -1):
     '''
@@ -154,7 +154,7 @@ def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, se
     # Resolve hostname if TCP/TLS/UDP
     # Other raw protocols take source interface name, not IP/hostname
     if FUZZER_DATA.proto in ['tcp', 'tls', 'udp']:
-        addr = resolveHostnameOrIp(host, FUZZER_DATA.port)
+        socket_family, addr = resolveHostnameOrIp(host, FUZZER_DATA.port)
     
     # Call messageprocessor preconnect callback if it exists
     try:
@@ -199,8 +199,10 @@ def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, se
         
         try:
             connection = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, proto_num)
-            # Disable automatically adding headers for us (not needed for IPPROTO_RAW or 0x300)
-            #connection.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 0)
+            # Disable automatically adding headers for us
+            # Not needed for IPPROTO_RAW or 0x300 - if added, will break
+            if FUZZER_DATA.proto != 'L2raw' and FUZZER_DATA.proto != 'raw':
+                connection.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 0)
         except PermissionError:
             print_error('No permission to create raw sockets.')
             print_error('Raw sockets require "sudo" or to run as a user with the CAP_NET_RAW capability.')
