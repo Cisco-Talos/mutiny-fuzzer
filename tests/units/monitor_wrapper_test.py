@@ -24,6 +24,17 @@ class TestMonitorWrapper(unittest.TestCase):
             exception.extra_data = 'Can add arbitrary members'
             signalMain(exception)
 
+    # This monitor raises SignalMain without an exception
+    class MonitorNonException(object):
+        is_enabled = True
+        def monitorTarget(self, targetIP, targetPort, signalMain):
+            signalMain('This should fail, requires an exception, not a string')
+
+    # This monitor doesn't have is_enabled defined
+    class MonitorNoIsEnabled(object):
+        def monitorTarget(self, targetIP, targetPort, signalMain):
+            pass
+
     def setUp(self):
         pass
 
@@ -52,11 +63,12 @@ class TestMonitorWrapper(unittest.TestCase):
 
     # Test sending a non-exception to signalMain()
     def test_non_exception(self):
-        # Use default monitor so it doesn't actually do anything
-        wrapper = ProcDirector.MonitorWrapper('127.0.0.1', 2500, monitor.Monitor())
-        with self.assertRaises(SystemExit) as context_manager:
-            # Manually invoke signalMain() this way because otherwise didn't see how to detect SystemExit
-            # If we give a monitor that does signalMain(string), the child thread will do sys.exit(-1)
-            wrapper.signalCrashDetectedOnMain('this should fail, as it is not an exception')
-        self.assertEqual(context_manager.exception.code, -1)
+        wrapper = ProcDirector.MonitorWrapper('127.0.0.1', 2500, self.MonitorNonException())
+        time.sleep(0.1)
+        self.assertFalse(wrapper.queue.empty())
+        self.assertTrue(type(wrapper.queue.get()), HaltException)
         
+    # Test a monitor without is_enabled member
+    def test_no_is_enabled(self):
+        with self.assertRaises(SystemExit) as context_manager:
+            wrapper = ProcDirector.MonitorWrapper('127.0.0.1', 2500, self.MonitorNoIsEnabled())

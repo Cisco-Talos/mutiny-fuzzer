@@ -129,7 +129,7 @@ class ProcDirector(object):
                 print_error('Invalid monitor behavior - signalMain() must be sent an exception, usually a Mutiny exception.')
                 print(f'Received: {str(exception)}')
                 # Can't sys.exit() inside thread:
-                os.kill(os.getpid(), signal.SIGINT)
+                self.queue.put(HaltException('Monitor threw an exception.'))
             self.queue.put(exception)
     
     def startMonitor(self, host, port):
