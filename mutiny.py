@@ -57,8 +57,9 @@ from mutiny_classes.mutiny_exceptions import *
 from mutiny_classes.message_processor import MessageProcessorExtraParams, MessageProcessor
 from mutiny_classes.exception_processor import ExceptionProcessor
 from backend.fuzzer_data import FuzzerData
-from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange
+from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange, print_success, print_warning, print_error
 from backend.fuzz_file_prep import prep
+from backend.print import Print
 
 # Path to Radamsa binary
 RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa/bin/radamsa") )
@@ -75,13 +76,6 @@ DUMPDIR = ""
 
 FUZZER_DATA = None
 MONITOR = None
-
-# colors TODO: add colors to error/warning messages
-SUCCESS = "\033[92m"
-WARNING = "\033[93m"
-ERROR = "\033[91m"
-CLEAR = "\033[00m"
-
 
 def sendPacket(connection: socket, addr: tuple, outPacketData: bytearray):
     '''
@@ -128,6 +122,25 @@ def receivePacket(connection: socket, addr: tuple, bytesToRead: int):
         print("\tReceived: %s" % (response))
     return response
 
+# Parse user-input hostname into IPv4/v6 address or DNS resolution, depending
+def resolveHostnameOrIp(hostname, port):
+    addrs = socket.getaddrinfo(host, port)
+    host = addrs[0][4][0]
+    if host == "::1":
+        host = "127.0.0.1"
+    
+    # cheap testing for ipv6/ipv4/unix
+    # don't think it's worth using regex for this, since the user
+    # will have to actively go out of their way to subvert this.
+    if "." in host:
+        socket_family = socket.AF_INET
+        addr = (host, port)
+    elif ":" in host:
+        socket_family = socket.AF_INET6 
+        addr = (host, port)
+    
+    return addr
+
 def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, seed: int = -1):
     '''
     Perform a fuzz run.  
@@ -137,40 +150,17 @@ def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, se
     # Otherwise, if connection is refused, we'll log last, but it will be wrong
     if logger != None:
         logger.resetForNewRun()
-    
-    if FUZZER_DATA.proto == 'L2raw':
-        # Raw sockets don't have a remote address, you just specify the
-        # interface to send from, so leave it alone
-        addr = (host, 0)
-    else:
-        addrs = socket.getaddrinfo(host,FUZZER_DATA.port)
-        host = addrs[0][4][0]
-        if host == "::1":
-            host = "127.0.0.1"
-        
-        # cheap testing for ipv6/ipv4/unix
-        # don't think it's worth using regex for this, since the user
-        # will have to actively go out of their way to subvert this.
-        if "." in host:
-            socket_family = socket.AF_INET
-            addr = (host,FUZZER_DATA.port)
-        elif ":" in host:
-            socket_family = socket.AF_INET6 
-            addr = (host,FUZZER_DATA.port)
-        else:
-            socket_family = socket.AF_UNIX
-            addr = (host)
 
-        #just in case filename is like "./asdf" !=> AF_INET
-        if "/" in host:
-            socket_family = socket.AF_UNIX
-            addr = (host)
-        
-        # Call messageprocessor preconnect callback if it exists
-        try:
-            messageProcessor.preConnect(seed, host, FUZZER_DATA.port) 
-        except AttributeError:
-            pass
+    # Resolve hostname if TCP/TLS/UDP
+    # Other raw protocols take source interface name, not IP/hostname
+    if FUZZER_DATA.proto in ['tcp', 'tls', 'udp']:
+        addr = resolveHostnameOrIp(host, FUZZER_DATA.port)
+    
+    # Call messageprocessor preconnect callback if it exists
+    try:
+        messageProcessor.preConnect(seed, host, FUZZER_DATA.port) 
+    except AttributeError:
+        pass
     
     # for TCP/UDP/RAW support
     if FUZZER_DATA.proto == "tcp":
@@ -185,37 +175,42 @@ def performRun(host: str, logger: Logger, messageProcessor: MessageProcessor, se
         else:
             # Handle target environment that doesn't support HTTPS verification
             ssl._create_default_https_context = _create_unverified_https_context
-        tcpConnection = jjjjsocket.socket(socket_family,socket.SOCK_STREAM)
+        tcpConnection = socket.socket(socket_family,socket.SOCK_STREAM)
         connection = ssl.wrap_socket(tcpConnection)
         # Don't connect yet, until after we do any binding below
     elif FUZZER_DATA.proto == "udp":
         connection = socket.socket(socket_family,socket.SOCK_DGRAM)
     # PROTO = dictionary of assorted L3 proto => proto number
     # e.g. "icmp" => 1
-    elif FUZZER_DATA.proto in PROTO:
-        connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
-        connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
-        addr = (host,0)
-        try:
-            connection = socket.socket(socket_family,socket.SOCK_RAW,PROTO[FUZZER_DATA.proto]) 
-        except Exception as e:
-            print(e)
-            print("Unable to create raw socket, please verify that you have sudo access")
-            sys.exit(0)
-    elif FUZZER_DATA.proto == "L2raw":
-        # Raw sockets should bind to the interface specified by the user as the "host"
-        connection = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
-        connection.bind(addr)
     else:
-        addr = (host,0)
+        # Anything else will be a raw socket
+        # Raw sockets should bind to the interface specified by the user as the "host"
+        # No "remote IP" etc given how it works
+        addr = (host, 0)
+        
+        if FUZZER_DATA.proto == "L2raw":
+            # Directly write packet including layer 2 header, also promiscuous
+            proto_num = 0x300
+        elif FUZZER_DATA.proto in PROTO:
+            proto_num = PROTO[FUZZER_DATA.proto]
+        else:
+            print_error(f'Unknown protocol: {FUZZER_DATA.proto}')
+            sys.exit(-1)
+        
         try:
-            #test if it's a valid number 
-            connection = socket.socket(socket_family,socket.SOCK_RAW,int(FUZZER_DATA.proto)) 
-            connection.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,0)
-        except Exception as e:
-            print(e)
-            print("Unable to create raw socket, please verify that you have sudo access")
-            sys.exit(0)
+            connection = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, proto_num)
+            # Disable automatically adding headers for us (not needed for IPPROTO_RAW or 0x300)
+            #connection.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 0)
+        except PermissionError:
+            print_error('No permission to create raw sockets.')
+            print_error('Raw sockets require "sudo" or to run as a user with the CAP_NET_RAW capability.')
+            sys.exit(-1)
+        try:
+            connection.bind(addr)
+        except OSError as e:
+            print_error(f'''Couldn't bind to {host}''')
+            print_error('Raw sockets require a local interface name to bind to instead of a hostname.')
+            sys.exit(-1)
         
     if FUZZER_DATA.proto == "tcp" or FUZZER_DATA.proto == "udp" or FUZZER_DATA.proto == "tls":
         # Specifying source port or address is only supported for tcp and udp currently

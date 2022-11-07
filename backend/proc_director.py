@@ -57,6 +57,7 @@ class ProcDirector(object):
         self.monitor = None
         mod_name = ""  
         self.classDir = "mutiny_classes"
+        self.is_monitor_used = False
         
         defaultDir = os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.pardir),self.classDir)
         filelist = [ "exception_processor","message_processor","monitor" ]
@@ -87,11 +88,23 @@ class ProcDirector(object):
             self.queue = queue.SimpleQueue()
             # monitor is the actual user custom monitor that implements monitorTarget
             self.monitor = monitor
-            # Immediately start monitor and allow it to run until Mutiny stops
-            self.task = threading.Thread(target=self.monitor.monitorTarget,args=(targetIP,targetPort,self.signalCrashDetectedOnMain))
-            # Daemon thread won't stop main thread from exiting
-            self.task.daemon = True
-            self.task.start()
+            # Immediately start monitor and allow it to run until Mutiny stops if enabled
+            if self.monitor.is_enabled:
+                self.task = threading.Thread(target=self.monitorTarget,args=(self.monitor.monitorTarget, targetIP,targetPort,self.signalCrashDetectedOnMain))
+                # Daemon thread won't stop main thread from exiting
+                self.task.daemon = True
+                self.task.start()
+            else:
+                print('Monitor disabled')
+        
+        # Wrap Monitor's monitorTarget *inside* of thread so we can do exception handling
+        def monitorTarget(self, monitor, *args):
+            try:
+                monitor.monitorTarget()
+            except Exception as e:
+                # Unhandled exceptions should never get here
+                # Something has gone wrong
+                pass
 
         # Don't override this function
         def signalCrashDetectedOnMain(self, exception: Exception):
@@ -103,4 +116,8 @@ class ProcDirector(object):
     def startMonitor(self, host, port):
         self.monitorWrapper = self.MonitorWrapper(host, port, self.monitor())
         return self.monitorWrapper
+    
+    def checkMonitor(self):
+        pass
+        
         

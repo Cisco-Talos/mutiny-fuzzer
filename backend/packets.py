@@ -71,7 +71,8 @@ PROTO = {
          "ospf":89,
          "mtp":92,
          "l2tp":116,
-         "sctp":132 
+         "sctp":132,
+         "raw":255, # Note, this is L3 raw (you specify IP header)
 }
 
 class IP(Structure):
