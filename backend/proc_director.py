@@ -49,7 +49,7 @@ import threading
 import traceback
 
 from threading import Event
-from mutiny_classes.mutiny_exceptions import MessageProcessorExceptions
+from mutiny_classes.mutiny_exceptions import MessageProcessorExceptions, HaltException
 from backend.menu_functions import print_success, print_error, print_warning
 
 class ProcDirector(object):
@@ -114,14 +114,14 @@ class ProcDirector(object):
                 print_warning('Halting Mutiny - Monitor stopped (no errors) but it should run indefinitely.')
                 
                 # Can't sys.exit() inside thread:
-                os.kill(os.getpid(), signal.SIGINT)
+                self.queue.put(HaltException('Monitor stopped.'))
             except Exception as e:
                 # Catch if Monitor dies and halt Mutiny
                 print_error('\nHalting Mutiny - Received exception from Monitor, backtrace:\n')
                 traceback.print_exc()
-                print()
+                print('', flush=True)
                 # Can't sys.exit() inside thread:
-                os.kill(os.getpid(), signal.SIGINT)
+                self.queue.put(HaltException('Monitor threw an exception.'))
 
         # Don't override this function
         def signalCrashDetectedOnMain(self, exception: Exception):

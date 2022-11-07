@@ -9,13 +9,15 @@ from mutiny_classes import monitor
 class TestMonitorWrapper(unittest.TestCase):
     # This monitor will immediately "Crash"
     class MonitorCrash(object):
+        is_enabled = True
         def monitorTarget(self, targetIP, targetPort, signalMain):
             exception = LogCrashException('Information about the crash')
             exception.extra_data = 'Can add arbitrary members'
             signalMain(exception)
 
+    # This monitor will sleep for 1 second, then "crash"
     class Monitor1SecDelayCrash(object):
-        # This monitor will sleep for 1 second, then "crash"
+        is_enabled = True
         def monitorTarget(self, targetIP, targetPort, signalMain):
             time.sleep(1)
             exception = LogCrashException('Information about the crash')
