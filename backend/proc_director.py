@@ -42,12 +42,15 @@ import imp
 import sys
 import os.path
 import queue
-import threading
+import os
+import signal
 import socket
+import threading
+import traceback
 
-from os import listdir
 from threading import Event
 from mutiny_classes.mutiny_exceptions import MessageProcessorExceptions
+from backend.menu_functions import print_success, print_error, print_warning
 
 class ProcDirector(object):
     def __init__(self, processDir):
@@ -88,6 +91,12 @@ class ProcDirector(object):
             self.queue = queue.SimpleQueue()
             # monitor is the actual user custom monitor that implements monitorTarget
             self.monitor = monitor
+            
+            if not hasattr(self.monitor, 'is_enabled'):
+                print_error('Mutiny updates added a Monitor "is_enabled" member.  This lets Mutiny detect and better handle problems with a Monitor.')
+                print_error('It is missing from your Monitor, please reference mutiny_classes/monitor.py and add it.')
+                sys.exit(-1)
+            
             # Immediately start monitor and allow it to run until Mutiny stops if enabled
             if self.monitor.is_enabled:
                 self.task = threading.Thread(target=self.monitorTarget,args=(self.monitor.monitorTarget, targetIP,targetPort,self.signalCrashDetectedOnMain))
@@ -100,17 +109,22 @@ class ProcDirector(object):
         # Wrap Monitor's monitorTarget *inside* of thread so we can do exception handling
         def monitorTarget(self, monitor, *args):
             try:
-                monitor.monitorTarget()
+                monitor(*args)
             except Exception as e:
-                # Unhandled exceptions should never get here
-                # Something has gone wrong
-                pass
+                # Catch if Monitor dies and halt Mutiny
+                print_error('\nReceived exception from Monitor, backtrace:\n')
+                traceback.print_exc()
+                print()
+                # Can't sys.exit() inside thread:
+                os.kill(os.getpid(), signal.SIGINT)
 
         # Don't override this function
         def signalCrashDetectedOnMain(self, exception: Exception):
             if not isinstance(exception, Exception):
-                print('Error: Invalid monitor behavior - signalMain() must be sent an exception, usually a Mutiny exception.')
-                sys.exit(-1)
+                print_error('Invalid monitor behavior - signalMain() must be sent an exception, usually a Mutiny exception.')
+                print(f'Received: {str(exception)}')
+                # Can't sys.exit() inside thread:
+                os.kill(os.getpid(), signal.SIGINT)
             self.queue.put(exception)
     
     def startMonitor(self, host, port):
