@@ -59,7 +59,6 @@ from mutiny_classes.exception_processor import ExceptionProcessor
 from backend.fuzzer_data import FuzzerData
 from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange, print_success, print_warning, print_error
 from backend.fuzz_file_prep import prep
-from backend.print import Print
 
 # Path to Radamsa binary
 RADAMSA=os.path.abspath( os.path.join(__file__, "../radamsa/bin/radamsa") )
