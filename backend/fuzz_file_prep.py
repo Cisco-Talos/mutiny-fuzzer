@@ -18,10 +18,9 @@ import os
 import sys
 import argparse
 from backend.fuzzer_types import Message, MessageCollection, Logger
-from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange
+from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange, print_success, print_warning, print_error
 from backend.fuzzer_data import FuzzerData
 from backend.packets import PROTO
-from backend.print import Print
 import scapy.all
 
 STATE_BETWEEN_MESSAGES= 0
@@ -68,7 +67,7 @@ def processInputFile():
     '''
 
     if not os.path.isfile(INPUT_FILE_PATH):
-        Print.print_error(f'Cannot read input {INPUT_FILE_PATH}')
+        print_error(f'Cannot read input {INPUT_FILE_PATH}')
         exit()
 
     with open(INPUT_FILE_PATH, 'r') as inputFile:
@@ -82,15 +81,15 @@ def processInputFile():
             try:
                 processCArray(inputFile)
             except Exception as e:
-                Print.print_error('''Can't parse as pcap or c_arrays:''')
-                Print.print_error(f'Pcap parsing error: {str(rdpcap_e)}')
-                Print.print_error(f'Not valid c_arrays: {str(e)}')
+                print_error('''Can't parse as pcap or c_arrays:''')
+                print_error(f'Pcap parsing error: {str(rdpcap_e)}')
+                print_error(f'Not valid c_arrays: {str(e)}')
 
     if len(FUZZER_DATA.messageCollection.messages) == 0:
-        Print.print_error('\nCouldn\'t process input file - are you sure you gave a file containing a tcpdump pcap or wireshark c_arrays?')
+        print_error('\nCouldn\'t process input file - are you sure you gave a file containing a tcpdump pcap or wireshark c_arrays?')
         exit()
 
-    Print.print_success(f'Processed input file {INPUT_FILE_PATH}')
+    print_success(f'Processed input file {INPUT_FILE_PATH}')
 
 def processFirstPcapPacket(packet, useMacs, testPort, testMac):
     global FUZZER_DATA, DEFAULT_PORT
@@ -105,7 +104,7 @@ def processFirstPcapPacket(packet, useMacs, testPort, testMac):
             FUZZER_DATA.proto = 'tcp'
             print('Protocol is TCP')
         else:
-            Print.print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to do set "--raw" for Layer 2 fuzzing?')
+            print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to do set "--raw" for Layer 2 fuzzing?')
             exit()
         # is not a raw socket, can grab ports
         # First packet will usually but not always come from client
@@ -174,9 +173,9 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
                     clientPort = srcHost
                     serverPort = dstHost
             elif not useMacs and inputData[i].sport not in [clientPort, serverPort]:
-                Print.print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
+                print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
             elif not useMacs and inputData[i].dport not in [clientPort, serverPort]:
-                Print.print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
+                print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
             # TODO: we don't have any sort of checking to make sure a l2raw capture is single stream 
             if not useMacs:
                 newMessageDirection = Message.Direction.Outbound if inputData[i].sport == clientPort else Message.Direction.Inbound
@@ -193,7 +192,7 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
             elif FUZZER_DATA.proto == 'L2raw': 
                 tempMessageData = bytes(inputData[i])
             else:
-                Print.print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
+                print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
                 exit()
 
             if newMessageDirection == LAST_MESSAGE_DIRECTION:
@@ -208,7 +207,7 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
                     askedToCombinePackets = True
                 if isCombiningPackets:
                     message.appendMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
-                    Print.print_success("\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction))
+                    print_success("\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction))
                     continue
             # Either direction isn't the same or we're not combining packets
             message = Message()
@@ -217,7 +216,7 @@ def processPcap(inputFile: object, testPort: int = None, testMac: str = None, co
             message.setMessageFrom(Message.Format.Raw, bytearray(tempMessageData), False)
             FUZZER_DATA.messageCollection.addMessage(message)
             j += 1
-            Print.print_success("\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction))
+            print_success("\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction))
         except AttributeError:
             # No payload, keep going (different from empty payload)
             continue
@@ -363,7 +362,7 @@ def writeFuzzerFile(autogen:bool = None):
         if not FORCE_DEFAULTS:
             while prompt("\nDo you want to generate a .fuzzer for another message number?", defaultIndex=1):
                 outputMessageNum = promptAndOutput(outputMessageNum)
-    Print.print_success("All files have been written.")
+    print_success("All files have been written.")
 
 
 def getNextMessage(startMessage: int, messageDirection: Message.Direction):
@@ -428,7 +427,7 @@ def promptAndOutput(outputMessageNum: int, autoGenerateAllClient: bool = False, 
     # write out .fuzzer file
     outputfilepath = "{0}-{1}.fuzzer".format(os.path.splitext(INPUT_FILE_PATH)[0], outputFileNameEnd)
     actualpath = FUZZER_DATA.writeToFile(outputfilepath, defaultComments=True, finalMessageNum=finalMessageNum)
-    Print.print_success("Wrote .fuzzer file: {0}".format(actualpath))
+    print_success("Wrote .fuzzer file: {0}".format(actualpath))
     
     # if we are fuzzing all client messages, continue to recursively call promptAndOutput for next message
     if autoGenerateAllClient:
