@@ -9,11 +9,11 @@ class TestMessageCollection(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def test_MessageCollectioninit(self):
+    def test_MessageCollection_init(self):
         pass
 
-    def test_addMessage(self):
+    def test_add_message(self):
         pass
 
-    def test_doClientMessagesMatch(self):
+    def test_do_client_messages_match(self):
         pass

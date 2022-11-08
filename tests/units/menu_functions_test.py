@@ -7,12 +7,12 @@ class TestMenuFunctions(unittest.TestCase):
     def test_prompt(self):
         pass
 
-    def promptInt(self):
+    def prompt_int(self):
         pass
 
-    def promptString(self):
+    def prompt_string(self):
         pass
 
-    def validateNumberRange(self):
+    def validate_number_range(self):
         pass
 
