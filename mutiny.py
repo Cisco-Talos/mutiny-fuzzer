@@ -52,16 +52,16 @@ def parse_fuzz_args(parser):
     '''
     parser.add_argument("prepped_fuzz", help="Path to file.fuzzer")
     parser.add_argument("target_host", help="Target to fuzz - hostname/ip address (typical) or outbound interface name (L2raw only)")
-    parser.add_argument("-s", "--sleeptime", help="Time to sleep between fuzz cases (float)", type=float, default=0)
+    parser.add_argument("-s", "--sleep_time", help="Time to sleep between fuzz cases (float)", type=float, default=0)
 
     seed_constraint = parser.add_mutually_exclusive_group()
     seed_constraint.add_argument("-r", "--range", help="Run only the specified cases. Acceptable arg formats: [ X | X- | X-Y ], for integers X,Y") 
     seed_constraint.add_argument("-l", "--loop", help="Loop/repeat the given finite number range. Acceptible arg format: [ X | X-Y | X,Y,Z-Q,R | ...]")
-    seed_constraint.add_argument("-d", "--dumpraw", help="Test single seed, dump to 'dumpraw' folder", type=int)
+    seed_constraint.add_argument("-d", "--dump_raw", help="Test single seed, dump to 'dumpraw' folder", type=int)
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-q", "--quiet", help="Don't log the outputs", action="store_true")
-    verbosity.add_argument("--logAll", help="Log all the outputs", action="store_true")
+    verbosity.add_argument("--log_all", help="Log all the outputs", action="store_true")
     parser.set_defaults(func=fuzz)
 
 def parse_prep_args(parser):

@@ -40,6 +40,7 @@ class FuzzFilePrep(object):
         self.fuzzer_data.processor_directory = args.processor_dir[0]
         # Did the user specify the -raw flag to do L2?
         self.is_raw = args.raw
+        self.use_macs = self.is_raw
         # If it's C Arrays, we ask for the protocol in the prompts
         self.c_array = False
         pass
@@ -52,9 +53,9 @@ class FuzzFilePrep(object):
         2. user configuration of .fuzzer format
         3. creation of the .fuzzer file
         '''
-        processInputFile() # extract inputData from input file
-        gen_fuzz_config() # prompt user for .fuzzer configuration preferences
-        writeFuzzerFile() # write .fuzzer file
+        self._processInputFile() # extract inputData from input file
+        self._gen_fuzz_config() # prompt user for .fuzzer configuration preferences
+        self._writeFuzzerFile() # write .fuzzer file
 
 
     def _process_input_file(self):
@@ -62,34 +63,29 @@ class FuzzFilePrep(object):
         Processes input files by opening them and dispatching a pcap ingestor. if pcap ingestor fails,
         attempts to dispach a c_array ingestor
         '''
-        with open(self.input_file_path, 'r') as input_file:
-            print("Processing %s..." % (self.input_file_path))
+        print("Processing %s..." % (self.input_file_path))
+        try:
+            self._process_pcap() # Process as Pcap preferentially
+        except Exception as rdpcap_e:
+            self.c_array = True
+            print("Processing as c_array...")
             try:
-                self._process_pcap(input_file) # Process as Pcap preferentially
-            except Exception as rdpcap_e:
-                print(WARNING + "Failed to process as PCAP: " +  str(rdpcap_e) + CLEAR)
-                self.c_array = True
-                print("Processing as c_array...")
-                try:
-                    self._process_c_array(input_file)
-                except Exception as e:
-                    print_error('''Can't parse as pcap or c_arrays:''')
-                    print_error(f'Pcap parsing error: {str(rdpcap_e)}')
-                    print_error(f'Not valid c_arrays: {str(e)}')
+                self._process_c_array(input_file)
+            except Exception as e:
+                pass
 
         if len(self.fuzzer_data.message_collection.messages) == 0:
-            print_error('\nCouldn\'t process input file - are you sure you gave a file containing a tcpdump pcap or wireshark c_arrays?')
+            pass
             exit()
 
         print_success(f'Processed input file {self.input_file_path}')
 
 
-    def _process_pcap(self, input_file, test_port: int = None, test_mac: str = None, combine_packets: bool = None):
+    def _process_pcap(self, test_port: int = None, test_mac: str = None, combine_packets: bool = None):
         '''
         ingests pcap using scapy and parses client-server communication to populate self.fuzzer_data 
         with message sequences that we can use as a baseline for our fuzzing
         params:
-            input_file: file object containing pcap or carray contents
             test_port: (optional) used for testing to stub out the calls to prompt() for port selection
             test_mac: (optional) used for testing to stub out the calls to prompt() for mac selection
             combine_packets: (optional) used for testing to stub out the calls to prompt for combining packets selection
@@ -99,7 +95,7 @@ class FuzzFilePrep(object):
         client_mac = None
         server_mac = None
         
-        input_data = scapy.all.rdpcap(input_file)
+        input_data = scapy.all.rdpcap(self.input_file_path)
         message = Message()
         temp_message_data = ""
         # Allow combining packets in same direction back-to-back into one message
@@ -119,9 +115,9 @@ class FuzzFilePrep(object):
                         client_port = client_data
                         server_port = server_data
                 elif not self.use_macs and input_data[i].sport not in [client_port, server_port]:
-                    print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
+                    pass
                 elif not self.use_macs and input_data[i].dport not in [client_port, server_port]:
-                    print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
+                    pass
                 # TODO: we don't have any sort of checking to make sure a l2raw capture is single stream 
                 if not self.use_macs:
                     new_message_direction = Message.Direction.Outbound if input_data[i].sport == client_port else Message.Direction.Inbound
@@ -138,7 +134,6 @@ class FuzzFilePrep(object):
                 elif self.fuzzer_data.proto == 'L2raw': 
                     temp_message_data = bytes(input_data[i])
                 else:
-                    print_error(f'Error: Fuzzer data has an unknown protocol {self.fuzzer_data.proto} - should be impossible?')
                     exit()
 
                 if new_message_direction == self.last_message_direction:
@@ -153,7 +148,6 @@ class FuzzFilePrep(object):
                         asked_to_combine_packets = True
                     if is_combining_packets:
                         message.append_message_from(Message.Format.Raw, bytearray(temp_message_data), False)
-                        print(SUCCESS + "\tMessage #%d - Added %d new bytes %s" % (j, len(temp_message_data), message.direction) + CLEAR)
                         continue
                 # Either direction isn't the same or we're not combining packets
                 message = Message()
@@ -162,13 +156,16 @@ class FuzzFilePrep(object):
                 message.set_message_from(Message.Format.Raw, bytearray(temp_message_data), False)
                 self.fuzzer_data.message_collection.add_message(message)
                 j += 1
-                print(SUCCESS + "\tMessage #%d - Processed %d bytes %s" % (j, len(message.get_original_message()), message.direction) + CLEAR)
             except AttributeError:
                 # No payload, keep going (different from empty payload)
                 continue
 
 
     def _process_first_pcap_packet(self, packet, test_port, test_mac):
+        dst_port = None
+        src_port = None
+        dst_mac = None
+        src_mac = None
         if self.is_raw:
             self.fuzzer_data.proto = 'L2raw'
             self.use_macs = True
@@ -181,7 +178,6 @@ class FuzzFilePrep(object):
                 self.fuzzer_data.proto = 'tcp'
                 print('Protocol is TCP')
             else:
-                print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to do set "--raw" for Layer 2 fuzzing?')
                 exit()
             # is not a raw socket, can grab ports
             # First packet will usually but not always come from client
@@ -197,6 +193,7 @@ class FuzzFilePrep(object):
         if self.use_macs:
             src_mac = packet.src
             dst_mac = packet.dst
+            server_mac = dst_mac
             if not self.force_defaults:
                 if test_mac:
                     server_mac = test_mac
@@ -218,7 +215,8 @@ class FuzzFilePrep(object):
             return client_port, server_port
 
 
-    def _process_c_array(self, input_file: object, combine_packets: bool = None):
+
+    def _process_c_array(self, combine_packets: bool = None):
         '''
         Process and convert c_array into .fuzzer
         This is processing the wireshark syntax looking like:
@@ -237,73 +235,74 @@ class FuzzFilePrep(object):
         asked_to_combine_packets = False
         is_combining_packets = False
 
-        i = 0
-        for line in input_file:
-            #remove comments
-            com_start, com_end = line.find('/*'),line.rfind('*/')
-            if com_start > -1 and com_end > -1:
-                line = line[:com_start] + line[com_end+2:]
+        with open(self.input_file_path, 'r') as input_file:
+            i = 0
+            for line in input_file:
+                #remove comments
+                com_start, com_end = line.find('/*'),line.rfind('*/')
+                if com_start > -1 and com_end > -1:
+                    line = line[:com_start] + line[com_end+2:]
 
-            if state == self.ProcessingState.Between:
-                # On a new message, seek inputData
-                message = Message()
-                temp_message_data = ""
-                
-                peer_pos = line.find("peer")
-                if peer_pos == -1:
-                    continue
-                elif line[peer_pos+4] == str(0):
-                    message.direction = Message.Direction.Outbound
-                elif line[peer_pos+4] == str(1):
-                    message.direction = Message.Direction.Inbound
-                else:
-                    continue
-                
-                brace_pos = line.find("{")
-                if brace_pos == -1:
-                    continue
-                temp_message_data += line[brace_pos+1:]
-                state = self.ProcessingState.Reading
-                
-                # Sometimes HTTP requests, etc, get separated into multiple packets but they should
-                # really be treated as one message.  Allow the user to decide to do this automatically
-                if message.direction == self.last_message_direction:
-                    if self.force_defaults:
-                        asked_to_combine_packets=True
-                        is_combining_packets=True
-                    if not asked_to_combine_packets:
-                        if combine_packets is not None:
-                            is_combining_packets = combine_packets
-                        else:
-                            is_combining_packets = prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
-                        asked_to_combine_packets = True
-                    if is_combining_packets:
-                        message = self.fuzzer_data.message_collection.messages[-1]
-                        state = self.ProcessingState.Combining
-            elif state == self.ProcessingState.Reading or state == self.ProcessingState.Combining:
-                brace_pos = line.find("}")
-                if brace_pos == -1:
-                    # No close brace means keep reading
-                    temp_message_data += line
-                else:
-                    # Close brace means save the message
-                    temp_message_data += line[:brace_pos]
-                    # Turn list of comma&space-separated bytes into a string of 0x hex bytes
-                    message_array = temp_message_data.replace(",", "").replace("0x", "").split()
-                    if state == self.ProcessingState.Reading:
-                        message.set_message_from(Message.Format.CommaSeparatedHex, ",".join(message_array), False)
-                        self.fuzzer_data.message_collection.add_message(message)
-                        print("\tMessage #%d - Processed %d bytes %s" % (i, len(message_array), message.direction))
-                    elif state == self.ProcessingState.Combining:
-                        # Append new inputData to last message
-                        i -= 1
-                        message.append_message_from(Message.Format.CommaSeparatedHex, ",".join(message_array), False, create_new_subcomponent=False)
-                        print("\tMessage #%d - Added %d new bytes %s" % (i, len(message_array), message.direction))
-                    if self.dump_ascii:
-                        print("\tAscii: %s" % (str(message.get_original_message())))
-                    i += 1
-                    state = self.ProcessingState.Between
-                    self.last_message_direction = message.direction
+                if state == self.ProcessingState.Between:
+                    # On a new message, seek inputData
+                    message = Message()
+                    temp_message_data = ""
+                    
+                    peer_pos = line.find("peer")
+                    if peer_pos == -1:
+                        continue
+                    elif line[peer_pos+4] == str(0):
+                        message.direction = Message.Direction.Outbound
+                    elif line[peer_pos+4] == str(1):
+                        message.direction = Message.Direction.Inbound
+                    else:
+                        continue
+                    
+                    brace_pos = line.find("{")
+                    if brace_pos == -1:
+                        continue
+                    temp_message_data += line[brace_pos+1:]
+                    state = self.ProcessingState.Reading
+                    
+                    # Sometimes HTTP requests, etc, get separated into multiple packets but they should
+                    # really be treated as one message.  Allow the user to decide to do this automatically
+                    if message.direction == self.last_message_direction:
+                        if self.force_defaults:
+                            asked_to_combine_packets=True
+                            is_combining_packets=True
+                        if not asked_to_combine_packets:
+                            if combine_packets is not None:
+                                is_combining_packets = combine_packets
+                            else:
+                                is_combining_packets = prompt("There are multiple packets from client to server or server to client back-to-back - combine payloads into single messages?")
+                            asked_to_combine_packets = True
+                        if is_combining_packets:
+                            message = self.fuzzer_data.message_collection.messages[-1]
+                            state = self.ProcessingState.Combining
+                elif state == self.ProcessingState.Reading or state == self.ProcessingState.Combining:
+                    brace_pos = line.find("}")
+                    if brace_pos == -1:
+                        # No close brace means keep reading
+                        temp_message_data += line
+                    else:
+                        # Close brace means save the message
+                        temp_message_data += line[:brace_pos]
+                        # Turn list of comma&space-separated bytes into a string of 0x hex bytes
+                        message_array = temp_message_data.replace(",", "").replace("0x", "").split()
+                        if state == self.ProcessingState.Reading:
+                            message.set_message_from(Message.Format.Comma_Separated_Hex, ",".join(message_array), False)
+                            self.fuzzer_data.message_collection.add_message(message)
+                            print("\tMessage #%d - Processed %d bytes %s" % (i, len(message_array), message.direction))
+                        elif state == self.ProcessingState.Combining:
+                            # Append new inputData to last message
+                            i -= 1
+                            message.append_message_from(Message.Format.Comma_Separated_Hex, ",".join(message_array), False, create_new_subcomponent=False)
+                            print("\tMessage #%d - Added %d new bytes %s" % (i, len(message_array), message.direction))
+                        if self.dump_ascii:
+                            print("\tAscii: %s" % (str(message.get_original_message())))
+                        i += 1
+                        state = self.ProcessingState.Between
+                        self.last_message_direction = message.direction
 
 
     def _gen_fuzz_config(self, failure_threshold: int = None, failure_timeout: int = None, proto: str = None, port: int = None):
@@ -312,7 +311,7 @@ class FuzzFilePrep(object):
         '''
 
         if self.force_defaults:
-            self.fuzzer_data.port = self.default_port
+            self.fuzzer_data.target_port = self.default_port
             self.fuzzer_data.failure_threshold = 3
             self.fuzzer_data.failure_timeout = 5
             self.fuzzer_data.proto = 'tcp'
@@ -323,7 +322,7 @@ class FuzzFilePrep(object):
             self.fuzzer_data.failure_timout = failure_timout if failure_timout else prompt_int("When the test case is repeated above, how many seconds should it wait between tests?", default_response=5)
             if not self.is_raw:
                 # port number to connect on
-                self.fuzzer_data.port = port if port else prompt_int("What port should the fuzzer %s?" % ("connect to"), default_response=self.default_port)
+                self.fuzzer_data.target_port = port if port else prompt_int("What port should the fuzzer %s?" % ("connect to"), default_response=self.default_port)
             
             # For pcaps, we pull protocol from the pcap itself
             if self.c_array:
@@ -333,11 +332,11 @@ class FuzzFilePrep(object):
                     # ask if tcp or udp
                     self.fuzzer_data.proto = proto if proto else prompt("Which protocol?", answers=["tcp", "udp"], default_index=0)
 
-        if not self.is_raw and self.fuzzer_data.port == None:
+        if not self.is_raw and self.fuzzer_data.target_port == None:
             # address case where CArray does not set default port
-            self.fuzzer_data.port = -1
-            while(self.fuzzer_data.port <= 0 or self.fuzzer_data.port >= 65535):
-                self.fuzzer_data.port = prompt_int("What port should the fuzzer %s?" % ("connect to"))
+            self.fuzzer_data.target_port = -1
+            while(self.fuzzer_data.target_port <= 0 or self.fuzzer_data.target_port >= 65535):
+                self.fuzzer_data.target_port = prompt_int("What port should the fuzzer %s?" % ("connect to"))
 
 
     def _write_fuzzer_file(self, auto_gen: bool = None):
@@ -357,7 +356,6 @@ class FuzzFilePrep(object):
             if not self.force_defaults:
                 while prompt("\nDo you want to generate a .fuzzer for another message number?", default_index=1):
                     output_message_num = self._prompt_and_output(output_message_num)
-        print(SUCCESS + "All files have been written." + CLEAR)
 
 
     def _get_next_message(self, start_message: int, message_direction: Message.Direction):
@@ -376,59 +374,58 @@ class FuzzFilePrep(object):
         
         return None
 
-def _prompt_and_output(self, output_message_num: int, auto_generate_all_client: bool = False, final_msg_num: int = None, msgs_to_fuzz: str = None):
-    '''
-    prompt for .fuzzer-specific questions and write file (calls above function)
-    allows us to let the user crank out a bunch of .fuzzer files quickly
-    output_message_num is the highest message output last time, if they're creating multiple .fuzzer files
-    auto_generate_all_client will make a .fuzzer file per client automatically
-    '''
-    # how many of the messages to output to the .fuzzer
-    if self.force_defaults or auto_generate_all_client:
-        final_message_num = len(self.fuzzer_data.message_collection.messages) - 1
-    else:
-        if len(self.fuzzer_data.message_collection.messages) == 1:
-            final_message_num = 0
+    def _prompt_and_output(self, output_message_num: int, auto_generate_all_client: bool = False, final_msg_num: int = None, msgs_to_fuzz: str = None):
+        '''
+        prompt for .fuzzer-specific questions and write file (calls above function)
+        allows us to let the user crank out a bunch of .fuzzer files quickly
+        output_message_num is the highest message output last time, if they're creating multiple .fuzzer files
+        auto_generate_all_client will make a .fuzzer file per client automatically
+        '''
+        # how many of the messages to output to the .fuzzer
+        if self.force_defaults or auto_generate_all_client:
+            final_message_num = len(self.fuzzer_data.message_collection.messages) - 1
         else:
-            final_message_num = final_msg_num if final_msg_num else prompt_int("What is the last message number you want output?", default_response=len(self.fuzzer_data.message_collection.messages)-1)
+            if len(self.fuzzer_data.message_collection.messages) == 1:
+                final_message_num = 0
+            else:
+                final_message_num = final_msg_num if final_msg_num else prompt_int("What is the last message number you want output?", default_response=len(self.fuzzer_data.message_collection.messages)-1)
 
-    # any messages previously marked for fuzzing, unmark first
-    # inefficient as can be, but who cares
-    for message in self.fuzzer_data.message_collection.messages:
-        if message.is_fuzzed:
-            message.is_fuzzed = False
-            for subcomponent in message.subcomponents:
-                subcomponent.is_fuzzed = False
-    
-    if not auto_generate_all_client:
-        messages_to_fuzz = ''
-        while len(messages_to_fuzz) <= 0 :
-            messages_to_fuzz = msgs_to_fuzz if msgs_to_fuzz else prompt_string("Which message numbers should be fuzzed? valid: 0-%d" % (final_message_num),default_response=str(output_message_num),validate_func=validate_number_range)
-        # len of messages_to_fuzz must now be between 0 and final_message_num
-        output_file_name_end = messages_to_fuzz
-        # iterate through messages and set .is_fuzzed on subcomponents
-        for message_index in validate_number_range(messages_to_fuzz, flatten_list=True):
-            self.fuzzer_data.message_collection.messages[message_index].is_fuzzed = True
-            for subcomponent in self.fuzzer_data.message_collection.messages[message_index].subcomponents:
+        # any messages previously marked for fuzzing, unmark first
+        # inefficient as can be, but who cares
+        for message in self.fuzzer_data.message_collection.messages:
+            if message.is_fuzzed:
+                message.is_fuzzed = False
+                for subcomponent in message.subcomponents:
+                    subcomponent.is_fuzzed = False
+        
+        if not auto_generate_all_client:
+            messages_to_fuzz = ''
+            while len(messages_to_fuzz) <= 0 :
+                messages_to_fuzz = msgs_to_fuzz if msgs_to_fuzz else prompt_string("Which message numbers should be fuzzed? valid: 0-%d" % (final_message_num),default_response=str(output_message_num),validate_func=validate_number_range)
+            # len of messages_to_fuzz must now be between 0 and final_message_num
+            output_file_name_end = messages_to_fuzz
+            # iterate through messages and set .is_fuzzed on subcomponents
+            for message_index in validate_number_range(messages_to_fuzz, flatten_list=True):
+                self.fuzzer_data.message_collection.messages[message_index].is_fuzzed = True
+                for subcomponent in self.fuzzer_data.message_collection.messages[message_index].subcomponents:
+                    subcomponent.is_fuzzed = True
+        else:
+            output_file_name_end = str(output_message_num)
+            # set message at output_message_num and all subcomponents .is_fuzzed to true
+            self.fuzzer_data.message_collection.messages[output_message_num].is_fuzzed = True
+            for subcomponent in self.fuzzer_data.message_collection.messages[output_message_num].subcomponents:
                 subcomponent.is_fuzzed = True
-    else:
-        output_file_name_end = str(output_message_num)
-        # set message at output_message_num and all subcomponents .is_fuzzed to true
-        self.fuzzer_data.message_collection.messages[output_message_num].is_fuzzed = True
-        for subcomponent in self.fuzzer_data.message_collection.messages[output_message_num].subcomponents:
-            subcomponent.is_fuzzed = True
 
-    # write out .fuzzer file
-    output_file_path = "{0}-{1}.fuzzer".format(os.path.splitext(self.input_file_path)[0], output_file_name_end)
-    actual_path = self.fuzzer_data.write_to_file(output_file_path, default_comments=True, final_message_num=final_message_num)
-    print(SUCCESS + "Wrote .fuzzer file: {0}".format(actual_path) + CLEAR)
-    
-    # if we are fuzzing all client messages, continue to recursively call prompt_and_output for next message
-    if auto_generate_all_client:
-        next_message = self._get_next_message(output_message_num + 1, Message.Direction.Outbound)
-        # will return none when we're out of messages to auto-output
-        if next_message:
-            self._prompt_and_output(next_message, auto_generate_all_client=True)
-    return final_message_num
+        # write out .fuzzer file
+        output_file_path = "{0}-{1}.fuzzer".format(os.path.splitext(self.input_file_path)[0], output_file_name_end)
+        actual_path = self.fuzzer_data.write_to_file(output_file_path, default_comments=True, final_message_num=final_message_num)
+        
+        # if we are fuzzing all client messages, continue to recursively call prompt_and_output for next message
+        if auto_generate_all_client:
+            next_message = self._get_next_message(output_message_num + 1, Message.Direction.Outbound)
+            # will return none when we're out of messages to auto-output
+            if next_message:
+                self._prompt_and_output(next_message, auto_generate_all_client=True)
+        return final_message_num
 
 

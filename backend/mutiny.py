@@ -34,9 +34,9 @@ class Mutiny(object):
         self.fuzzer_data.read_from_file(fuzzer_file_path)
         self.target_host = args.target_host
         self.sleep_time = args.sleep_time
-        self.dump_raw = args.dumpraw # test single seed, dump to dumpraw
+        self.dump_raw = args.dump_raw # test single seed, dump to dumpraw
         self.quiet = args.quiet # dont log the outputs 
-        self.log_all = args.logAll if not self.quiet else False # kinda weird/redundant verbosity flags? 
+        self.log_all = args.log_all if not self.quiet else False # kinda weird/redundant verbosity flags? 
         self.fuzzer_folder = os.path.abspath(os.path.dirname(fuzzer_file_path))
         self.output_data_folder_path = os.path.join("%s_%s" % (os.path.splitext(fuzzer_file_path)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
 

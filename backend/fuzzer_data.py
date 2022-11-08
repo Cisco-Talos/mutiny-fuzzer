@@ -157,9 +157,9 @@ class FuzzerData(object):
                         else:
                             raise RuntimeError("should_perform_test_run must be 0 or 1")
                         self._push_comments("should_perform_test_run")
-                    elif args[0] == "receive_timout":
-                        self.receive_timout = float(args[1])
-                        self._push_comments("receive_timout")
+                    elif args[0] == "receive_timeout":
+                        self.receive_timeout = float(args[1])
+                        self._push_comments("receive_timeout")
                     elif args[0] == "messages_to_fuzz":
                         print("WARNING: It looks like you're using a legacy .fuzzer file with messages_to_fuzz set.  This is now deprecated, so please update to the new format")
                         self.messages_to_fuzz = validate_number_range(args[1], flatten_list=True)
@@ -226,7 +226,7 @@ class FuzzerData(object):
 
     
     # Write out the FuzzerData to the specified .fuzzer file
-    def writeToFile(self, file_path, default_comments=False, final_message_num=-1):
+    def write_to_file(self, file_path, default_comments=False, final_message_num=-1):
         orig_file_path = file_path
         tail = 0
         while os.path.isfile(file_path):
@@ -278,8 +278,8 @@ class FuzzerData(object):
         if default_comments:
             file_descriptor.write("# How long for recv() to block when waiting on data from server\n")
         else:
-            file_descriptor.write(self._get_comments("receive_timout"))
-        file_descriptor.write("receive_timout {0}\n".format(self.receive_timout))
+            file_descriptor.write(self._get_comments("receive_timeout"))
+        file_descriptor.write("receive_timeout {0}\n".format(self.receive_timeout))
         
         # Should Perform Test Run
         if default_comments:
@@ -323,7 +323,7 @@ class FuzzerData(object):
         if default_comments:
             file_descriptor.write("# The actual messages in the conversation\n# Each contains a message to be sent to or from the server, printably-formatted\n")
         for i in range(0, final_message_num+1):
-            essage = self.message_collection.messages[i]
+            message = self.message_collection.messages[i]
             if not default_comments:
                 file_descriptor.write(self._get_comments("message{0}".format(i)))
             file_descriptor.write(message.get_serialized())
