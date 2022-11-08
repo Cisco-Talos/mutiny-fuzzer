@@ -220,7 +220,7 @@ class FuzzerData(object):
             return ""
 
     # Set messages_to_fuzz from string (such as "1,3-4")
-    def setMessagesToFuzzFromString(self, messages_to_fuzz_str):
+    def set_messages_to_fuzz_from_string(self, messages_to_fuzz_str):
         self.messages_to_fuzz = validate_number_range(messages_to_fuzz_str, flatten_list=True)
         #print self._messages_to_fuzz
 

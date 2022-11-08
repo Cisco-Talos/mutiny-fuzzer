@@ -138,7 +138,7 @@ class TestFuzzerData(unittest.TestCase):
         self.assertEqual(self.fuzz_data.message_collection.messages[6].direction, "inbound")
         self.assertEqual(self.fuzz_data.message_collection.messages[6].subcomponents[0].message, b'\x00\x00\x00\x00')
 
-    def test_read_from_fdNonDefault(self):
+    def test_read_from_fd_non_default(self):
         file = open(self.read_file_2, 'r')
         self.fuzz_data.read_from_fd(file)
         file.close()
@@ -184,23 +184,23 @@ class TestFuzzerData(unittest.TestCase):
         
 
 
-    def test_setMessagesToFuzzFromString(self):
+    def test_set_messages_to_fuzz_from_string(self):
         file = open(self.read_file_1, 'r')
         self.fuzz_data.read_from_fd(file)
         file.close()
-        messages_to_fuzzStr = '1,3-4'
-        self.fuzz_data.setMessagesToFuzzFromString(messages_to_fuzzStr)
+        messages_to_fuzz_str = '1,3-4'
+        self.fuzz_data.set_messages_to_fuzz_from_string(messages_to_fuzz_str)
         self.assertIn(1, self.fuzz_data.messages_to_fuzz)
         self.assertIn(3, self.fuzz_data.messages_to_fuzz)
         self.assertIn(4, self.fuzz_data.messages_to_fuzz)
-        messages_to_fuzzStr = '2-3,1'
-        self.fuzz_data.setMessagesToFuzzFromString(messages_to_fuzzStr)
+        messages_to_fuzz_str = '2-3,1'
+        self.fuzz_data.set_messages_to_fuzz_from_string(messages_to_fuzz_str)
         self.assertIn(2, self.fuzz_data.messages_to_fuzz)
         self.assertIn(3, self.fuzz_data.messages_to_fuzz)
         self.assertIn(1, self.fuzz_data.messages_to_fuzz)
         self.assertNotIn(4, self.fuzz_data.messages_to_fuzz)
-        messages_to_fuzzStr = '0'
-        self.fuzz_data.setMessagesToFuzzFromString(messages_to_fuzzStr)
+        messages_to_fuzz_str = '0'
+        self.fuzz_data.set_messages_to_fuzz_from_string(messages_to_fuzz_str)
         self.assertIn(0, self.fuzz_data.messages_to_fuzz)
 
     def test_write_to_file(self):
