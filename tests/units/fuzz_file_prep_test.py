@@ -11,13 +11,12 @@ from argparse import Namespace
 class TestFuzzFilePrep(unittest.TestCase):
     def setUp(self):
         self.pcap_file_1 = './tests/units/input_files/test_FuzzFilePrep1.pcap'
-        self.pcap_file_1 = './tests/units/input_files/test0.pcap'
         self.pcap_file_2 = self.pcap_file_1# FIXME: change to pcap with same ports for both client/server
         self.pcap_file_3 = self.pcap_file_1# FIXME: change to pcap with multiple consecutive inbound/outbounds
         self.cra_file_1 = './tests/units/input_files/test_FuzzFilePrep1.cra'
         self.cra_file_2 = self.cra_file_1  # FIXME: change this to a cArray with multiple consecutive outbound/inbounds
         self.invalid_file = './tests/units/input_files/test_FuzzFilePrep.invalid'
-        self.prompt_and_output_file_1 = './tests/units/input_files/test0-0.fuzzer'
+        self.prompt_and_output_file_1 = './tests/units/input_files/test_FuzzFilePrep1-0.fuzzer'
         self.prompt_and_output_file_2 = './tests/units/input_files/test_FuzzFilePrep1-0,2-4.fuzzer'
         self.nonexistent_file = 'non/existent/file'
         args = Namespace(pcap_file=self.pcap_file_1, processor_dir='default', dump_ascii=False, force=True, raw=False)

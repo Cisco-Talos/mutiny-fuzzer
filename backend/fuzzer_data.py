@@ -85,11 +85,11 @@ class FuzzerData(object):
     # as data is read in
     def _push_comments(self, comment_section_name):
         self.comments[comment_section_name] = self._read_comments
-        self._read_Comments = ""
+        self._read_comments = ""
 
     # Same as above, but appends to existing comment section if possible
     def _append_comments(self, comment_section_name):
-        if comment_sectionName in self.comments:
+        if comment_section_name in self.comments:
             self.comments[comment_section_name] += self._read_comments
         else:
             self.comments[comment_section_name] = self._read_comments
