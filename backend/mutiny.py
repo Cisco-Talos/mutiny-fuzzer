@@ -60,7 +60,7 @@ class Mutiny(object):
                 try:
                     os.mkdir(self.dump_dir)
                 except:
-                    print("Unable to create dumpraw dir")
+                    print_error("Unable to create dumpraw dir")
                     pass
 
         self.connection = None # connection to target
@@ -134,13 +134,13 @@ class Mutiny(object):
                     #if --quiet, (logger==None) => AttributeError
                     if self.log_all:
                         try:
-                            self.logger.output_log(iteration, self.fuzzer_data.message_collection, "LogAll ")
+                            self.logger.output_log(iteration, self.fuzzer_data.message_collection, "log_all ")
                         except AttributeError:
                             pass 
                 except Exception as e:
                     if self.log_all:
                         try:
-                            self.logger.output_log(iteration, self.fuzzer_data.message_collection, "LogAll ")
+                            self.logger.output_log(iteration, self.fuzzer_data.message_collection, "log_all ")
                         except AttributeError:
                             pass
                     
@@ -151,34 +151,34 @@ class Mutiny(object):
                     else:
                         self.exception_processor.process_exception(e)
                         # Will not get here if processException raises another exception
-                        print("Exception ignored: %s" % (repr(e)))
+                        print_warning("Exception ignored: %s" % (repr(e)))
                 
                 # Check for any exceptions from Monitor
                 # Intentionally do this before and after a run in case we have back-to-back exceptions
                 # (Example: Crash, then Pause, then Resume
-                self.__raise_next_monitor_event_if_any(is_paused)
+                self._raise_next_monitor_event_if_any(is_paused)
             except PauseFuzzingException as e:
-                print('Mutiny received a pause exception, pausing until monitor sends a resume...')
+                print_warning('Mutiny received a pause exception, pausing until monitor sends a resume...')
                 is_paused = True
 
             except ResumeFuzzingException as e:
                 if is_paused:
-                    print('Mutiny received a resume exception, continuing to run.')
+                    print_success('Mutiny received a resume exception, continuing to run.')
                     is_paused = False
                 else:
-                    print('Mutiny received a resume exception but wasn\'t paused, ignoring and continuing.')
+                    print_warning('Mutiny received a resume exception but wasn\'t paused, ignoring and continuing.')
 
             except LogCrashException as e:
                 if failure_count == 0:
                     try:
-                        print("Mutiny detected a crash")
+                        print_success("Mutiny detected a crash")
                         self.logger.output_log(iteration, self.fuzzer_data.message_collection, str(e))
                     except AttributeError:  
                         pass   
 
                 if self.log_all:
                     try:
-                        self.logger.output_log(iteration, self.fuzzer_data.message_collection, "LogAll ")
+                        self.logger.output_log(iteration, self.fuzzer_data.message_collection, "log_all ")
                     except AttributeError:
                         pass
 
@@ -188,61 +188,61 @@ class Mutiny(object):
             except AbortCurrentRunException as e:
                 # Give up on the run early, but continue to the next test
                 # This means the run didn't produce anything meaningful according to the processor
-                print("Run aborted: %s" % (str(e)))
+                print_warning("Run aborted: %s" % (str(e)))
             
             except RetryCurrentRunException as e:
                 # Same as AbortCurrentRun but retry the current test rather than skipping to next
-                print("Retrying current run: %s" % (str(e)))
+                print_warning("Retrying current run: %s" % (str(e)))
                 # Slightly sketchy - a continue *should* just go to the top of the while without changing i
                 continue
                 
             except LogAndHaltException as e:
                 if self.logger:
                     self.logger.output_log(iteration, self.fuzzer_data.message_collection, str(e))
-                    print("Received LogAndHaltException, logging and halting")
+                    print_warning("Received LogAndHaltException, logging and halting")
                 else:
-                    print("Received LogAndHaltException, halting but not logging (quiet mode)")
+                    print_warning("Received LogAndHaltException, halting but not logging (quiet mode)")
                 exit()
                 
             except LogLastAndHaltException as e:
                 if self.logger:
                     if iteration > self.min_run_number:
-                        print("Received LogLastAndHaltException, logging last run and halting")
+                        print_warning("Received LogLastAndHaltException, logging last run and halting")
                         if self.min_run_number == self.max_run_number:
                             #in case only 1 case is run
                             self.logger.output_last_log(iteration, last_message_collection, str(e))
                             print("Logged case %d" % iteration)
                         else:
-                            self.logger.output_last_log(iteratino-1, last_message_collection, str(e))
+                            self.logger.output_last_log(iteration-1, last_message_collection, str(e))
                     else:
-                        print("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
+                        print_warning("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
                 else:
-                    print("Received LogLastAndHaltException, halting but not logging (quiet mode)")
+                    print_warning("Received LogLastAndHaltException, halting but not logging (quiet mode)")
                 exit()
 
             except HaltException as e:
-                print("Received HaltException halting")
+                print_warning("Received HaltException halting")
                 exit()
 
-            if was_crash_Detected:
+            if was_crash_detected:
                 if failure_count < self.fuzzer_data.failure_threshold:
-                    print("Failure %d of %d allowed for seed %d" % (failure_count, self.fuzzer_data.failure_threshold, iteration))
+                    print_error("Failure %d of %d allowed for seed %d" % (failure_count, self.fuzzer_data.failure_threshold, iteration))
                     print("The test run didn't complete, continuing after %d seconds..." % (self.fuzzer_data.failure_timeout))
                     time.sleep(self.fuzzer_data.failure_timeout)
                 else:
-                    print("Failed %d times, moving to next test." % (failure_count))
+                    print_warning("Failed %d times, moving to next test." % (failure_count))
                     failure_count = 0
-                    i += 1
+                    iteration += 1
             else:
-                i += 1
+                iteration += 1
             
             # Stop if we have a maximum and have hit it
-            if self.max_run_number >= 0 and i > self.max_run_number:
+            if self.max_run_number >= 0 and iteration > self.max_run_number:
                 exit()
 
             if self.dump_raw:
                 exit()
-            pass
+
 
     def _perform_run(self, seed: int = -1):
         '''
@@ -263,42 +263,42 @@ class Mutiny(object):
         # create a connection to the target process
         self.connection = FuzzerConnection.connection(self.fuzzer_data.proto, self.target_host, self.fuzzer_data.target_port, self.fuzzer_data.source_ip, self.fuzzer_data.source_port, seed)
 
-        iteration = 0   
-        for iteration in range(0, len(self.fuzzer_data.message_collection.messages)):
-            message = self.fuzzer_data.message_collection.messages[iteration]
+        message_num = 0   
+        for message_num in range(0, len(self.fuzzer_data.message_collection.messages)):
+            message = self.fuzzer_data.message_collection.messages[message_num]
             
             # Go ahead and revert any fuzzing or messageprocessor changes before proceeding
             message.reset_altered_message()
 
             if message.is_outbound():
-                self._send_fuzz_session_message(iteration, message, seed)
+                self._send_fuzz_session_message(messsage_num, message, seed)
             else: 
-                self._receive_fuzz_session_message(iteration, message)
+                self._receive_fuzz_session_message(message_num, message)
 
             if self.logger != None:  
-                self.logger.set_highest_message_number(iteration)
-            iteration += 1
+                self.logger.set_highest_message_number(message_num)
+            message_num += 1
 
         self.connection.close()
 
-    def _receive_fuzz_session_message(self, iteration, message):
+    def _receive_fuzz_session_message(self, message_num, message):
         # Receiving packet from server
         message_byte_array = message.get_altered_message()
         data = self.connection.receive_packet(len(message_byte_array), self.fuzzer_data.receive_timeout)
-        self.message_processor.post_receive_process(data, MessageProcessorExtraParams(iteration, -1, False, [message_byte_array], [data]))
+        self.message_processor.post_receive_process(data, MessageProcessorExtraParams(message_num, -1, False, [message_byte_array], [data]))
 
         if self.debug:
-            print("\tReceived: %s" % (response))
+            print("\tReceived: %s" % (data))
         if data == message_byte_array:
             print("\tReceived expected response")
         if self.logger: 
-            self.logger.set_received_message_data(iteration, data)
+            self.logger.set_received_message_data(message_num, data)
         if self.dump_raw:
-            loc = os.path.join(self.dump_dir, "%d-inbound-seed-%d"%(iteration, self.dump_raw))
+            loc = os.path.join(self.dump_dir, "%d-inbound-seed-%d"%(message_num, self.dump_raw))
             with open(loc,"wb") as f:
                 f.write(repr(str(data))[1:-1])
 
-    def _send_fuzz_session_message(self, iteration, message, seed):
+    def _send_fuzz_session_message(self, message_num, message, seed):
         # Primarily used for deciding how to handle preFuzz/preSend callbacks
         message_has_subcomponents = len(message.subcomponents) > 1
 
@@ -307,18 +307,18 @@ class Mutiny(object):
         
         if message_has_subcomponents:
             # For message with subcomponents, call prefuzz on fuzzed subcomponents
-            for j in range(0, len(message.subcomponents)):
-                subcomponent = message.subcomponents[j] 
+            for subcomponent_num in range(0, len(message.subcomponents)):
+                subcomponent = message.subcomponents[subcomponent_num] 
                 # Note: we WANT to fetch subcomponents every time on purpose
                 # This way, if user alters subcomponent[0], it's reflected when
                 # we call the function for subcomponent[1], etc
                 actual_subcomponents = [subcomponent.get_altered_byte_array() for subcomponent in message.subcomponents]
-                pre_fuzz = self.message_processor.pre_fuzz_subcomponent_process(subcomponent.get_altered_byte_array(), MessageProcessorExtraParams(iteration, j, subcomponent.is_fuzzed, original_subcomponents, actual_subcomponents))
+                pre_fuzz = self.message_processor.pre_fuzz_subcomponent_process(subcomponent.get_altered_byte_array(), MessageProcessorExtraParams(message_num, subcomponent_num, subcomponent.is_fuzzed, original_subcomponents, actual_subcomponents))
                 subcomponent.set_altered_byte_array(pre_fuzz)
         else:
             # If no subcomponents, call prefuzz on ENTIRE message
             actual_subcomponents = [subcomponent.get_altered_byte_array() for subcomponent in message.subcomponents]
-            pre_fuzz = self.message_processor.pre_fuzz_process(actual_subcomponents[0], MessageProcessorExtraParams(iteration, -1, message.is_fuzzed, original_subcomponents, actual_subcomponents))
+            pre_fuzz = self.message_processor.pre_fuzz_process(actual_subcomponents[0], MessageProcessorExtraParams(message_num, -1, message.is_fuzzed, original_subcomponents, actual_subcomponents))
             message.subcomponents[0].set_altered_byte_array(pre_fuzz)
 
         # Skip fuzzing for seed == -1
@@ -329,19 +329,19 @@ class Mutiny(object):
         # Fuzzing has now been done if this message is fuzzed
         # Always call preSend() regardless for subcomponents if there are any
         if message_has_subcomponents:
-            for j in range(0, len(message.subcomponents)):
-                subcomponent = message.subcomponents[j] 
+            for subcomponent_num in range(0, len(message.subcomponents)):
+                subcomponent = message.subcomponents[subcomponent_num] 
                 # See preFuzz above - we ALWAYS regather this to catch any updates between
                 # callbacks from the user
                 actual_subcomponents = [subcomponent.get_altered_byte_array() for subcomponent in message.subcomponents]
-                pre_send = self.message_processor.pre_send_subcomponent_process(subcomponent.get_altered_byte_array(), MessageProcessorExtraParams(iteration, j, subcomponent.is_fuzzed, original_subcomponents, actual_subcomponents))
+                pre_send = self.message_processor.pre_send_subcomponent_process(subcomponent.get_altered_byte_array(), MessageProcessorExtraParams(message_num, subcomponent_num, subcomponent.is_fuzzed, original_subcomponents, actual_subcomponents))
                 subcomponent.set_altered_byte_array(pre_send)
         # Always let the user make any final modifications pre-send, fuzzed or not
         actual_subcomponents = [subcomponent.get_altered_byte_array() for subcomponent in message.subcomponents]
-        byte_array_to_send = self.message_processor.pre_send_process(message.get_altered_message(), MessageProcessorExtraParams(iteration, -1, message.is_fuzzed, original_subcomponents, actual_subcomponents))
+        byte_array_to_send = self.message_processor.pre_send_process(message.get_altered_message(), MessageProcessorExtraParams(message_num, -1, message.is_fuzzed, original_subcomponents, actual_subcomponents))
 
         if self.dump_raw:
-            loc = os.path.join(self.dump_dir,"%d-outbound-seed-%d"%(iteration, self.dump_raw))
+            loc = os.path.join(self.dump_dir,"%d-outbound-seed-%d"%(message_num, self.dump_raw))
             if message.is_fuzzed:
                 loc += "-fuzzed"
             with open(loc, "wb") as f:
@@ -371,7 +371,7 @@ class Mutiny(object):
     def _raise_next_monitor_event_if_any(self, is_paused):
         # Check the monitor queue for exceptions generated during run
         if not self.monitor.queue.empty():
-            print('Monitor event detected')
+            print_warning('Monitor event detected')
             exception = self.monitor.queue.get()
             
             if is_paused:
@@ -380,9 +380,9 @@ class Mutiny(object):
                     pass
                 elif not isinstance(exception, ResumeFuzzingException):
                     # Any other exception besides resume after pause makes no sense
-                    print(f'Received exception while Mutiny was paused, can\'t handle properly:')
+                    print_warning(f'Received exception while Mutiny was paused, can\'t handle properly:')
                     print(repr(exception))
-                    print('Exception will be ignored and discarded.')
+                    print_warning('Exception will be ignored and discarded.')
                     return
             raise exception
 

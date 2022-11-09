@@ -1,5 +1,4 @@
 import ssl
-from backend.fuzzer_types import Message
 import socket
 import sys
 import os
@@ -7,6 +6,8 @@ current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
 sys.path.append(parent)
 from mutiny_classes import mutiny_exceptions
+from backend.packets import PROTO
+from backend.fuzzer_types import Message
 
 class FuzzerConnection(object):
     '''
@@ -26,11 +27,10 @@ class FuzzerConnection(object):
         self.source_port = src_port
         self.seed = seed
         self.addr = None
-        supported_protocols = ['tcp','udp','tls','L2raw']
-        if self.proto not in supported_protocols:
-            # TODO: after moving print_error to ./util/, call it here
-            print("[ERROR] The protocol specified in the .fuzzer file is not currently supported.\nIf you'd like, you can submit an issue or a PR for support!")
-            sys.exit(0)
+        if self.proto != "L2raw" and self.proto not in PROTO:
+            print_error(f'Unknown protocol: {self.proto}')
+            sys.exit(-1)
+
 
         # determine format of address to use based on protocol
         self._get_addr()
@@ -85,6 +85,12 @@ class FuzzerConnection(object):
         print("\tReceived %d bytes" % (len(response)))
         return response
 
+
+    def close(self):
+        # wrapper for socket.close()
+        self.connection.close()
+
+
     def _connect_to_tcp_socket(self):
         # create, bind, and connect to socket
         self.connection = socket.socket(self.socket_family, socket.SOCK_STREAM)
@@ -105,14 +111,29 @@ class FuzzerConnection(object):
         else:
             # Handle target environment that doesn't support HTTPS verification
             ssl._create_default_https_context = _create_unverified_https_context
-        tcpconnection = socket.socket(self.socket_family, socket.SOCK_STREAM)
-        self.connection = ssl.wrap_socket(tcpconnection)
+        tcp_connection = socket.socket(self.socket_family, socket.SOCK_STREAM)
+        self.connection = ssl.wrap_socket(tcp_connection)
         self._bind_to_interface()
         self.connection.connect(self.addr)
 
     def _connect_to_raw_socket(self):
-        self.connection = socket.socket(self.socket_family, socket.SOCK_RAW, 0x0300)
-        self._bind_to_interface()
+        try:
+            # Directly write packet including layer 2 header, also promiscuous
+            proto_num = 0x300 if self.proto == 'L2raw' else PROTO[self.proto]
+            self.connection = socket.socket(self.socket_family, socket.SOCK_RAW, proto_num)
+            # Disable automatically ading headers for us
+            # Not needed for IPPROTO_RAW or 0x300 - if added, will break
+           if self.proto != 'L2raw' and self.proto != 'raw':
+                connection.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 0)
+        except PermissionError:
+            print_error('No permission to create raw sockets.')
+            print_error('Raw sockets require "sudo" or to run as a user with CAP_NET_RAW capability.')
+        try:
+            self._bind_to_interface()
+        except OSError as e:
+            print_error(f'''Couldn't bind to {host}''')
+            print_error(f'Raw sockets require a local interface name to bind to instead of a hostname.')
+            sys.exit(-1)
 
     def _get_addr(self):
         '''
@@ -138,13 +159,6 @@ class FuzzerConnection(object):
             elif ":" in self.host:
                 self.socket_family = socket.AF_INET6 
                 self.addr = (self.host, self.target_port)
-            else:
-                self.socket_family = socket.AF_UNIX
-                self.addr = (self.host)
-            #just in case filename is like "./asdf" !=> af_inet
-            if "/" in self.host:
-                self.socket_family = socket.AF_UNIX
-                self.addr = (self.host)
 
     def _bind_to_interface(self):
         if self.proto == 'L2raw':

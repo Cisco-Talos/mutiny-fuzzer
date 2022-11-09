@@ -39,12 +39,19 @@ TESTING = False
 DEBUG = False
 
 
+import os.path
+import signal
+import sys
+import argparse
+from backend.fuzz_file_prep import FuzzFilePrep
+from backend.mutiny import Mutiny
+from backend.menu_functions import print_warning, print_error, print_success
+
 # Set up signal handler for CTRL+C
 def sigint_handler(signal: int, frame: object):
     # Quit on ctrl-c
-    print("\nSIGINT received, stopping\n")
+    print_warning("\nSIGINT received, stopping\n")
     sys.exit(0)
-
 
 def parse_fuzz_args(parser):
     '''
@@ -57,7 +64,7 @@ def parse_fuzz_args(parser):
     seed_constraint = parser.add_mutually_exclusive_group()
     seed_constraint.add_argument("-r", "--range", help="Run only the specified cases. Acceptable arg formats: [ X | X- | X-Y ], for integers X,Y") 
     seed_constraint.add_argument("-l", "--loop", help="Loop/repeat the given finite number range. Acceptible arg format: [ X | X-Y | X,Y,Z-Q,R | ...]")
-    seed_constraint.add_argument("-d", "--dump_raw", help="Test single seed, dump to 'dumpraw' folder", type=int)
+    seed_constraint.add_argument("-d", "--dump_raw", help="Test single seed, dump to 'dump_raw' folder", type=int)
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument("-q", "--quiet", help="Don't log the outputs", action="store_true")
@@ -105,7 +112,7 @@ if __name__ == '__main__':
             print_error(f'Cannot read input {args.pcap_file}')
             exit()
 
-        fuzz_file_prepper = fuzz_file_prep(args)
+        fuzz_file_prepper = FuzzFilePrep(args)
         fuzz_file_prepper.prep()
     else:
         #Check for dependency binaries

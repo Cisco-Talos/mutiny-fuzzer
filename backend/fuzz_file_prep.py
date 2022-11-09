@@ -1,4 +1,5 @@
 #------------------------------------------------------------------
+
 # Prep traffic log for fuzzing
 #
 # Cisco Confidential
@@ -19,7 +20,7 @@ import os
 import sys
 import argparse
 from backend.fuzzer_types import Message, MessageCollection, Logger
-from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range
+from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range, print_success, print_warning, print_error
 from backend.fuzzer_data import FuzzerData
 from backend.packets import PROTO
 import scapy.all
@@ -45,7 +46,6 @@ class FuzzFilePrep(object):
         self.c_array = False
         pass
 
-
     def prep(self):
         '''
         facilitates
@@ -53,9 +53,9 @@ class FuzzFilePrep(object):
         2. user configuration of .fuzzer format
         3. creation of the .fuzzer file
         '''
-        self._processInputFile() # extract inputData from input file
+        self._process_input_file() # extract inputData from input file
         self._gen_fuzz_config() # prompt user for .fuzzer configuration preferences
-        self._writeFuzzerFile() # write .fuzzer file
+        self._write_fuzzer_file() # write .fuzzer file
 
 
     def _process_input_file(self):
@@ -67,15 +67,19 @@ class FuzzFilePrep(object):
         try:
             self._process_pcap() # Process as Pcap preferentially
         except Exception as rdpcap_e:
+            print_error("Failed to process as PCAP: " +  str(rdpcap_e))
             self.c_array = True
             print("Processing as c_array...")
             try:
-                self._process_c_array(input_file)
+                self._process_c_array()
             except Exception as e:
+                print_error('''Can't parse as pcap or c_arrays:''')
+                print_error(f'Pcap parsing error: {str(rdpcap_e)}')
+                print_error(f'Not valid c_arrays: {str(e)}')
                 pass
 
         if len(self.fuzzer_data.message_collection.messages) == 0:
-            pass
+            print_error('\nCouldn\'t process input file - are you sure you gave a file containing a tcpdump pcap or wireshark c_arrays?')
             exit()
 
         print_success(f'Processed input file {self.input_file_path}')
@@ -115,10 +119,10 @@ class FuzzFilePrep(object):
                         client_port = client_data
                         server_port = server_data
                 elif not self.use_macs and input_data[i].sport not in [client_port, server_port]:
-                    pass
+                    print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
                 elif not self.use_macs and input_data[i].dport not in [client_port, server_port]:
-                    pass
                 # TODO: we don't have any sort of checking to make sure a l2raw capture is single stream 
+                    print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
                 if not self.use_macs:
                     new_message_direction = Message.Direction.Outbound if input_data[i].sport == client_port else Message.Direction.Inbound
                 else:
@@ -134,6 +138,7 @@ class FuzzFilePrep(object):
                 elif self.fuzzer_data.proto == 'L2raw': 
                     temp_message_data = bytes(input_data[i])
                 else:
+                    print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
                     exit()
 
                 if new_message_direction == self.last_message_direction:
@@ -148,6 +153,7 @@ class FuzzFilePrep(object):
                         asked_to_combine_packets = True
                     if is_combining_packets:
                         message.append_message_from(Message.Format.Raw, bytearray(temp_message_data), False)
+                        print_success("\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction))
                         continue
                 # Either direction isn't the same or we're not combining packets
                 message = Message()
@@ -156,6 +162,7 @@ class FuzzFilePrep(object):
                 message.set_message_from(Message.Format.Raw, bytearray(temp_message_data), False)
                 self.fuzzer_data.message_collection.add_message(message)
                 j += 1
+                print_success("\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction))
             except AttributeError:
                 # No payload, keep going (different from empty payload)
                 continue
@@ -178,6 +185,7 @@ class FuzzFilePrep(object):
                 self.fuzzer_data.proto = 'tcp'
                 print('Protocol is TCP')
             else:
+                print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to do set "--raw" for Layer 2 fuzzing?')
                 exit()
             # is not a raw socket, can grab ports
             # First packet will usually but not always come from client
@@ -357,6 +365,7 @@ class FuzzFilePrep(object):
                 while prompt("\nDo you want to generate a .fuzzer for another message number?", default_index=1):
                     output_message_num = self._prompt_and_output(output_message_num)
 
+        print_success('All files have been written.')
 
     def _get_next_message(self, start_message: int, message_direction: Message.Direction):
         '''
@@ -427,5 +436,3 @@ class FuzzFilePrep(object):
             if next_message:
                 self._prompt_and_output(next_message, auto_generate_all_client=True)
         return final_message_num
-
-

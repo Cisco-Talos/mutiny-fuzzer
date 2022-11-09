@@ -34,6 +34,25 @@
 #
 #------------------------------------------------------------------
 
+# Print success message in green
+def print_success(message):
+    SUCCESS = "\033[92m"
+    CLEAR = "\033[00m"
+    print(f'{SUCCESS}{message}{CLEAR}')
+
+# Print warnings in yellow
+# Copy pasta of CLEAR just to avoid finding a place to park defines / creating a class
+def print_warning(message):
+    WARNING = "\033[93m"
+    CLEAR = "\033[00m"
+    print(f'{WARNING}{message}{CLEAR}')
+
+# Print errors in red
+def print_error(message):
+    ERROR = "\033[91m"
+    CLEAR = "\033[00m"
+    print(f'{ERROR}{message}{CLEAR}')
+
 # used during the mutiny_prep.py .fuzzer generation
 # asks for and returns a boolean
 def prompt(question, answers=["y", "n"], default_index=None):

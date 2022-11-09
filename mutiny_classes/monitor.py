@@ -41,6 +41,9 @@
 from mutiny_classes.mutiny_exceptions import *
 
 class Monitor(object):
+    # Set to True to use the monitor
+    is_enabled = False
+    
     # This function will run asynchronously in a different thread to monitor the host
     def monitor_target(self, target_ip, target_port, signal_main):
         # Can do something like:
