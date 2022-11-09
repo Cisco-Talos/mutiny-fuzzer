@@ -8,14 +8,14 @@ from mutiny_classes import monitor
 class TestMonitorWrapper(unittest.TestCase):
     # This monitor will immediately "Crash"
     class MonitorCrash(object):
-        def monitorTarget(self, targetIP, targetPort, signalMain):
+        def monitor_target(self, targetIP, targetPort, signalMain):
             exception = LogCrashException('Information about the crash')
             exception.extra_data = 'Can add arbitrary members'
             signalMain(exception)
 
     class Monitor1SecDelayCrash(object):
         # This monitor will sleep for 1 second, then "crash"
-        def monitorTarget(self, targetIP, targetPort, signalMain):
+        def monitor_target(self, targetIP, targetPort, signalMain):
             time.sleep(1)
             exception = LogCrashException('Information about the crash')
             exception.extra_data = 'Can add arbitrary members'

@@ -1,5 +1,5 @@
 import ssl
-from fuzzer_types import Message
+from backend.fuzzer_types import Message
 import socket
 import sys
 import os
@@ -8,7 +8,7 @@ parent = os.path.dirname(current)
 sys.path.append(parent)
 from mutiny_classes import mutiny_exceptions
 
-class Connection(object):
+class FuzzerConnection(object):
     '''
     isolates connection management functionality including but not limited to;
     - determining type of connection to use based on target protocol
@@ -38,35 +38,35 @@ class Connection(object):
         if self.proto == 'tcp':
             self._connect_to_tcp_socket()
         elif self.proto == 'udp':
-            _connect_to_udp_socket()
+            self._connect_to_udp_socket()
         elif self.proto == 'tls':
-            _connect_to_tls_socket()
+            self._connect_to_tls_socket()
         # must be a raw socket since we already checked if protocol was supported
         else :
-            _connect_to_raw_socket()
+            self._connect_to_raw_socket()
 
     def send_packet(self, data: bytearray, timeout: float):
         '''
         uses the connection to the target process and outbound data packet (byteArray), sends it out.
         If debug mode is enabled, we print out the raw bytes
         '''
-        self._connection.settimeout(timeout)
-        if self._connection.type == socket.SOCK_STREAM:
-            self._connection.send(data)
+        self.connection.settimeout(timeout)
+        if self.connection.type == socket.SOCK_STREAM:
+            self.connection.send(data)
         else:
-            self._connection.sendto(data, self.addr)
+            self.connection.sendto(data, self.addr)
 
         print("\tSent %d byte packet" % (len(data)))
 
 
     def receive_packet(self, bytes_to_read: int, timeout):
         read_buf_size = 4096
-        self._connection.settimeout(timeout)
+        self.connection.settimeout(timeout)
 
-        if self._connection.type == socket.SOCK_STREAM or self._connection.type == socket.SOCK_DGRAM or self._connection.type == socket.SOCK_RAW:
-            response = bytearray(self._connection.recv(read_buf_size))
+        if self.connection.type == socket.SOCK_STREAM or self.connection.type == socket.SOCK_DGRAM or self.connection.type == socket.SOCK_RAW:
+            response = bytearray(self.connection.recv(read_buf_size))
         else:
-            response, self.addr = bytearray(self._connection.recvfrom(read_buf_size))
+            response, self.addr = bytearray(self.connection.recvfrom(read_buf_size))
         
         if len(response) == 0:
             # If 0 bytes are recv'd, the server has closed the connection
@@ -79,7 +79,7 @@ class Connection(object):
             # whether or not it's as much data as expected
             i = read_buf_size
             while i < bytes_to_read:
-                response += bytearray(self._connection.recv(read_buf_size))
+                response += bytearray(self.connection.recv(read_buf_size))
                 i += read_buf_size
                 
         print("\tReceived %d bytes" % (len(response)))
@@ -87,12 +87,13 @@ class Connection(object):
 
     def _connect_to_tcp_socket(self):
         # create, bind, and connect to socket
-        self._connection = socket.socket(self.socket_family, socket.SOCK_STREAM)
+        self.connection = socket.socket(self.socket_family, socket.SOCK_STREAM)
         self._bind_to_interface()
-        self._connection.connect(self.addr)
+
+        self.connection.connect(self.addr)
 
     def _connect_to_udp_socket(self):
-        self._connection = socket.socket(self.socket_family, socket.SOCK_DGRAM)
+        self.connection = socket.socket(self.socket_family, socket.SOCK_DGRAM)
         self._bind_to_interface()
 
     def _connect_to_tls_socket(self):
@@ -104,14 +105,14 @@ class Connection(object):
         else:
             # Handle target environment that doesn't support HTTPS verification
             ssl._create_default_https_context = _create_unverified_https_context
-        tcp_connection = socket.socket(self.socket_family, socket.SOCK_STREAM)
-        self._connection = ssl.wrap_socket(tcp_connection)
+        tcpconnection = socket.socket(self.socket_family, socket.SOCK_STREAM)
+        self.connection = ssl.wrap_socket(tcpconnection)
         self._bind_to_interface()
-        self._connection.connect(self.addr)
+        self.connection.connect(self.addr)
 
-    def _connect_toraw_socket(self):
-        self._connection = socket.socket(self.socket_family, socket.SOCK_RAW, 0x0300)
-        _bind_to_interface()
+    def _connect_to_raw_socket(self):
+        self.connection = socket.socket(self.socket_family, socket.SOCK_RAW, 0x0300)
+        self._bind_to_interface()
 
     def _get_addr(self):
         '''
@@ -123,7 +124,7 @@ class Connection(object):
             self.addr = (self.host,0)
             self.socket_family = socket.AF_PACKET
         else:
-            addrs = socket.getaddrinfo(self.host, self.port)
+            addrs = socket.getaddrinfo(self.host, self.target_port)
             self.host = addrs[0][4][0]
             if self.host == "::1":
                 self.host = "127.0.0.1"
@@ -133,10 +134,10 @@ class Connection(object):
             # will have to actively go out of their way to subvert this.
             if "." in self.host:
                 self.socket_family = socket.AF_INET
-                self.addr = (self.host, self.port)
+                self.addr = (self.host, self.target_port)
             elif ":" in self.host:
                 self.socket_family = socket.AF_INET6 
-                self.addr = (self.host, self.port)
+                self.addr = (self.host, self.target_port)
             else:
                 self.socket_family = socket.AF_UNIX
                 self.addr = (self.host)
@@ -145,25 +146,18 @@ class Connection(object):
                 self.socket_family = socket.AF_UNIX
                 self.addr = (self.host)
 
-
-    def _bind_to_interface():
+    def _bind_to_interface(self):
         if self.proto == 'L2raw':
-            self._connection.bind(self.addr)
+            self.connection.bind(self.addr)
         else:
             if self.source_port != -1:
                 # Only support right now for tcp or udp, but bind source port address to something
                 # specific if requested
                 if self.source_ip != "" or self.source_ip != "0.0.0.0":
-                    self._connection.bind((self.source_ip, self.source_port))
+                    self.connection.bind((self.source_ip, self.source_port))
                 else:
                     # User only specified a port, not an IP
-                    self._connection.bind(('0.0.0.0', self.source_port))
+                    self.connection.bind(('0.0.0.0', self.source_port))
             elif self.source_ip != "" and self.source_ip != "0.0.0.0":
                 # No port was specified, so 0 should auto-select
-                self._connection.bind((self.source_ip, 0))
-
-
-
-
-
-
+                self.connection.bind((self.source_ip, 0))

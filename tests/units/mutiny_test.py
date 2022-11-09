@@ -1,9 +1,9 @@
 import unittest
 from time import sleep
 import shutil
-import os
 import socket
-import mutiny
+import os
+from backend.mutiny import Mutiny
 from argparse import Namespace
 import threading
 from backend.fuzzer_data import FuzzerData
@@ -13,128 +13,17 @@ class TestMutiny(unittest.TestCase):
 
 
     def setUp(self):
-        self.fuzzFilePath1 = './tests/units/input_files/test_FuzzDataRead.fuzzer'
-        self.logFilePath1 = self.fuzzFilePath1[:-7] + '_logs'
-        self.args = Namespace(prepped_fuzz=self.fuzzFilePath1, target_host='127.0.0.1', sleeptime=0, range=None, loop=None, dumpraw=None, quiet=False, logAll=False)
+        self.fuzz_file_path_1 = './tests/units/input_files/test_fuzz_data_read.fuzzer'
+        self.log_file_path_1 = self.fuzz_file_path_1[:-7] + '_logs'
+        args = Namespace(prepped_fuzz=self.fuzz_file_path_1, target_host='127.0.0.1', sleep_time=0, range=None, loop=None, dump_raw=None, quiet=False, log_all=False)
+        self.mutiny = Mutiny(args)
+        self.mutiny.radamsa = os.path.abspath(os.path.join(__file__,"../../../radamsa/bin/radamsa"))
         pass
 
     def tearDown(self):
-        # in case it has been changed 
-        mutiny.RADAMSA = os.path.abspath(os.path.join(__file__,"../../../radamsa/bin/radamsa"))
+        os.rmtree(self.log_file_path_1)
         pass
 
-    def test_sendPacket(self):
-        def handle_connection(test_type):
-            test_conn = socket.socket(socket_family, socket_type)
-            test_conn.bind((test_ip, test_port))
-            if test_type == 'tcp': 
-                test_conn.listen()
-                conn, mutiny_addr = test_conn.accept()
-                received_data['data'] = conn.recv(len(out_packet_data))
-                conn.close()
-            else:
-                received_data['data'], addr = test_conn.recvfrom(len(out_packet_data))
-            test_conn.close()
-
-        received_data = {}
-        mutiny.FUZZER_DATA = FuzzerData()
-        mutiny.FUZZER_DATA.receiveTimeout = 3.0
-        test_ip = '127.0.0.1'
-        test_port = 9999
-        socket_family = socket.AF_INET
-        socket_type = socket.SOCK_STREAM
-        mutiny_conn = socket.socket(socket_family, socket_type)
-        mutiny_conn.bind(('0.0.0.0', 0))
-        out_packet_data = bytes('test', 'utf-8')
-
-        # tcp test
-        conn_thread = threading.Thread(target=handle_connection, args=('tcp',))
-        conn_thread.start()
-        sleep(1) # avoid race, allow handle_connections to bind and listen
-        test_addr = (test_ip, test_port)
-        mutiny_conn.connect(test_addr)
-        mutiny.sendPacket(mutiny_conn, test_addr, out_packet_data)
-        conn_thread.join()
-        mutiny_conn.close()
-        self.assertEqual(received_data['data'], out_packet_data)
-        # non-tcp test
-        test_port = 9998 # to avoid issues binding to same port in short time
-        socket_type = socket.SOCK_DGRAM
-        test_addr = (test_ip, test_port)
-        conn_thread = threading.Thread(target=handle_connection, args=('non-tcp',))
-        conn_thread.start()
-        mutiny_conn = socket.socket(socket_family, socket_type)
-        mutiny.sendPacket(mutiny_conn, test_addr, out_packet_data)
-        conn_thread.join()
-        mutiny_conn.close()
-        self.assertEqual(received_data['data'], out_packet_data)
-
-
-    def test_receivePacket(self):
-        def handle_connection(test_type):
-            test_conn = socket.socket(socket_family, socket_type)
-            test_conn.bind((test_ip, test_port))
-            if test_type == 'tcp': 
-                test_conn.listen()
-                conn, mutiny_addr = test_conn.accept()
-                conn.recv
-                conn.send(out_packet_data)
-            else:
-                test_conn.sendto(out_packet_data,(mutiny_ip, mutiny_port))
-
-            conn.close()
-            test_conn.close()
-
-        mutiny.FUZZER_DATA = FuzzerData()
-        mutiny.FUZZER_DATA.receiveTimeout = 3.0
-        test_ip = '127.0.0.1'
-        test_port = 8888
-        mutiny_ip = '127.0.0.1'
-        mutiny_port = 4000
-        socket_family = socket.AF_INET
-        socket_type = socket.SOCK_STREAM
-        mutiny_conn = socket.socket(socket_family, socket_type)
-        mutiny_conn.bind((mutiny_ip, mutiny_port))
-        out_packet_data = bytes('test', 'utf-8')
-
-        # tcp test
-        conn_thread = threading.Thread(target=handle_connection, args=('tcp',))
-        conn_thread.start()
-        sleep(1) # avoid race, allow handle_connections to bind and listen
-        test_addr = (test_ip, test_port)
-        mutiny_conn.connect(test_addr)
-        response = mutiny.receivePacket(mutiny_conn, test_addr, len(out_packet_data))
-        conn_thread.join()
-        self.assertEqual(response, out_packet_data)
-        mutiny_conn.close()
-        ''' # FIXME: SOCK_RAW requires root and the other protocols aren't supported on macOS, should move to linux vm and see which protocol we can use
-        # non-tcp test 
-        test_port = 9998 # to avoid issues binding to same port in short time
-        socket_type = socket.SOCK_RAW
-        test_addr = (test_ip, test_port)
-        conn_thread = threading.Thread(target=handle_connection, args=('non-tcp',))
-        conn_thread.start()
-        mutiny_conn = socket.socket(socket_family, socket_type)
-        response = mutiny.receivePacket(mutiny_conn, test_addr, len(out_packet_data))
-        conn_thread.join()
-        mutiny_conn.close()
-        self.assertEqual(response, out_packet_data)
-        '''
-        # greater than 4096
-        mutiny_port = 4001
-        test_port = 8889
-        mutiny_conn = socket.socket(socket_family, socket_type)
-        mutiny_conn.bind((mutiny_ip, mutiny_port))
-        out_packet_data = bytes('A' * 4096 + 'test', 'utf-8')
-        conn_thread = threading.Thread(target=handle_connection, args=('tcp',))
-        conn_thread.start()
-        sleep(1) # avoid race, allow handle_connections to bind and listen
-        test_addr = (test_ip, test_port)
-        mutiny_conn.connect(test_addr)
-        response = mutiny.receivePacket(mutiny_conn, test_addr, len(out_packet_data))
-        conn_thread.join()
-        self.assertEqual(response, out_packet_data)
-        mutiny_conn.close()
 
 
     def test_performRun(self):
@@ -194,8 +83,8 @@ class TestMutiny(unittest.TestCase):
     def test_fuzzSetup(self):
         mutiny.fuzzSetup(self.args, testing=True)
         # let fuzzer_data.readFromFile tests verify correctness of contents, just check that it was called
-        self.assertIsNotNone(mutiny.FUZZER_DATA)
-        self.assertEqual(len(mutiny.FUZZER_DATA.messageCollection.messages), 7)
+        self.assertIsNotNone(self.mutiny.fuzzer_data)
+        self.assertEqual(len(self.mutiny.fuzzer_data.messageCollection.messages), 7)
         self.assertTrue(os.path.exists(self.logFilePath1))
         shutil.rmtree(self.logFilePath1)
 
@@ -236,8 +125,8 @@ class TestMutiny(unittest.TestCase):
     def test_processorSetup(self):
         outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
         fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
-        mutiny.FUZZER_DATA = FuzzerData()
-        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
+        self.mutiny.fuzzer_data = FuzzerData()
+        self.mutiny.fuzzer_data.readFromFile(self.fuzz_file_path_1)
         msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
         self.assertTrue(os.path.exists(outputDataFolderPath))
         # just check they arent none, we can verify their correct initialization in their class tests
@@ -249,9 +138,9 @@ class TestMutiny(unittest.TestCase):
     def test_processorSetupNonDefaultFolder(self):
         outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
         fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
-        mutiny.FUZZER_DATA = FuzzerData()
-        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
-        mutiny.FUZZER_DATA.processorDirectory = 'testdir'
+        self.mutiny.fuzzer_data = FuzzerData()
+        self.mutiny.fuzzer_data.readFromFile(self.fuzz_file_path_1)
+        self.mutiny.fuzzer_data.processorDirectory = 'testdir'
         msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
         self.assertIsNotNone(msgProcessor)
         self.assertIsNotNone(exceptProcessor)
@@ -265,8 +154,8 @@ class TestMutiny(unittest.TestCase):
         outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
         self.args.quiet = True
         fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
-        mutiny.FUZZER_DATA = FuzzerData()
-        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
+        self.mutiny.fuzzer_data = FuzzerData()
+        self.mutiny.fuzzer_data.readFromFile(self.fuzz_file_path_1)
         msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
         self.assertIsNotNone(msgProcessor)
         self.assertIsNotNone(exceptProcessor)
@@ -277,8 +166,8 @@ class TestMutiny(unittest.TestCase):
         outputDataFolderPath = './tests/units/input_files/test_processorSetup_logs/data'
         fuzzerFolder = os.path.abspath( os.path.join( __file__, '../input_files'))
         self.args.dumpraw = True
-        mutiny.FUZZER_DATA = FuzzerData()
-        mutiny.FUZZER_DATA.readFromFile(self.fuzzFilePath1)
+        self.mutiny.fuzzer_data = FuzzerData()
+        self.mutiny.fuzzer_data.readFromFile(self.fuzz_file_path_1)
         msgProcessor, exceptProcessor, logger = mutiny.processorSetup(fuzzerFolder, outputDataFolderPath, self.args)
         self.assertTrue(os.path.exists(outputDataFolderPath))
         # just check they arent none, we can verify their correct initialization in their class tests

@@ -12,12 +12,12 @@ class TestMessage(unittest.TestCase):
 
     def test_MessageInit(self):
         self.assertEqual(self.message.direction, -1)
-        self.assertEqual(self.message.isFuzzed, False)
+        self.assertEqual(self.message.is_fuzzed, False)
         self.assertEqual(len(self.message.subcomponents), 0)
 
 
-    def test_getOriginalSubComponents(self):
-        self.assertEqual(len(self.message.getOriginalSubcomponents()), 0)
+    def test_get_original_subcomponents(self):
+        self.assertEqual(len(self.message.get_original_subcomponents()), 0)
 
         sub1 = MessageSubComponent(bytearray('foo','utf-8'), False)
         sub2 = MessageSubComponent(bytearray('bar','utf-8'), False)
@@ -25,31 +25,31 @@ class TestMessage(unittest.TestCase):
         self.message.subcomponents.append(sub1)
         self.message.subcomponents.append(sub2)
         self.message.subcomponents.append(sub3)
-        self.assertEqual(len(self.message.getOriginalSubcomponents()), 3)
-        self.assertEqual(self.message.getOriginalSubcomponents()[2],bytearray('poo', 'utf-8'))
+        self.assertEqual(len(self.message.get_original_subcomponents()), 3)
+        self.assertEqual(self.message.get_original_subcomponents()[2],bytearray('poo', 'utf-8'))
 
         self.message.subcomponents.pop()
-        self.assertEqual(len(self.message.getOriginalSubcomponents()), 2)
-        self.assertEqual(self.message.getOriginalSubcomponents()[-1], bytearray('bar', 'utf-8'))
+        self.assertEqual(len(self.message.get_original_subcomponents()), 2)
+        self.assertEqual(self.message.get_original_subcomponents()[-1], bytearray('bar', 'utf-8'))
 
 
-    def test_getAlteredSubComponents(self):
+    def test_get_altered_subcomponents(self):
         sub1 = MessageSubComponent(bytearray('foo','utf-8'), False)
         sub2 = MessageSubComponent(bytearray('bar','utf-8'), False)
         sub3 = MessageSubComponent(bytearray('poo','utf-8'), False)
         self.message.subcomponents.append(sub1)
         self.message.subcomponents.append(sub2)
         self.message.subcomponents.append(sub3)
-        self.assertEqual(len(self.message.getOriginalSubcomponents()), 3)
-        self.assertEqual(self.message.getOriginalSubcomponents()[2],sub3._altered)
+        self.assertEqual(len(self.message.get_original_subcomponents()), 3)
+        self.assertEqual(self.message.get_original_subcomponents()[2],sub3._altered)
 
         self.message.subcomponents.pop()
-        self.assertEqual(len(self.message.getOriginalSubcomponents()), 2)
-        self.assertEqual(self.message.getOriginalSubcomponents()[-1], sub2._altered)
+        self.assertEqual(len(self.message.get_original_subcomponents()), 2)
+        self.assertEqual(self.message.get_original_subcomponents()[-1], sub2._altered)
 
 
 
-    def test_getOriginalMessage(self):
+    def test_get_original_message(self):
         sub1 = MessageSubComponent(bytearray('foo','utf-8'), False)
         sub2 = MessageSubComponent(bytearray('bar','utf-8'), False)
         sub3 = MessageSubComponent(bytearray('poo','utf-8'), False)
@@ -57,10 +57,10 @@ class TestMessage(unittest.TestCase):
         self.message.subcomponents.append(sub2)
         self.message.subcomponents.append(sub3)
         orig = b'foobarpoo'
-        self.assertEqual(self.message.getOriginalMessage(),orig)
+        self.assertEqual(self.message.get_original_message(),orig)
 
 
-    def test_getAlteredMessage(self):
+    def test_get_altered_message(self):
         sub1 = MessageSubComponent(bytearray('foo','utf-8'), False)
         sub2 = MessageSubComponent(bytearray('bar','utf-8'), False)
         sub3 = MessageSubComponent(bytearray('poo','utf-8'), False)
@@ -69,148 +69,147 @@ class TestMessage(unittest.TestCase):
         self.message.subcomponents.append(sub3)
         subs = [sub1,sub2,sub3]
         orig_alt = bytearray().join([sub._altered for sub in subs])
-        self.assertEqual(self.message.getAlteredMessage(), orig_alt)
+        self.assertEqual(self.message.get_altered_message(), orig_alt)
         
 
-    def test_resetAlteredMessage(self):
+    def test_reset_altered_message(self):
         sub1 = MessageSubComponent(bytearray('foo','utf-8'), False)
         # change _altered message
         self.message.subcomponents.append(sub1)
-        self.message.subcomponents[0].setAlteredByteArray(bytearray('notfoo','utf-8'))
+        self.message.subcomponents[0].set_altered_byte_array(bytearray('notfoo','utf-8'))
         # reset altered message
-        self.message.resetAlteredMessage()
+        self.message.reset_altered_message()
         self.assertEqual(self.message.subcomponents[0].message, bytearray('foo', 'utf-8'))
 
 
 
-    def test_setMessageFrom(self):
-        isFuzzed = False
+    def test_set_message_from(self):
+        is_fuzzed = False
         # commaSeperatedHex
-        sourceType = 0
+        source_type = 0
         message = '01,02,20,2a'.replace(',','')
-        messageBytes = bytearray.fromhex(message)
-        self.message.setMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
+        message_bytes = bytearray.fromhex(message)
+        self.message.set_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, message_bytes)
 
         # Ascii
-        sourceType = 1
+        source_type = 1
         message = "'foo'"
-        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
-        self.message.setMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
+        message_bytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.set_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, message_bytes)
 
         # Raw
-        sourceType = 2
+        source_type = 2
         message = bytearray('foo', 'utf-8')
-        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.message.set_message_from(source_type, message, is_fuzzed)
         self.assertEqual(self.message.subcomponents[0].message, message)
 
         # Invalid
         message = [1,2,3]
         # TODO: assert failure
-        #self.message.setMessageFrom(sourceType, message, isFuzzed)
+        #self.message.set_message_from(source_type, message, is_fuzzed)
         
-        # isFuzzed=True
-        isFuzzed = True
+        # is_fuzzed=True
+        is_fuzzed = True
         # commaSeperatedHex
-        sourceType = 0
+        source_type = 0
         message = '01,02,20,2a'.replace(',','')
-        messageBytes = bytearray.fromhex(message)
-        self.message.setMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
+        message_bytes = bytearray.fromhex(message)
+        self.message.set_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, message_bytes)
 
         # Ascii
-        sourceType = 1
+        source_type = 1
         message = "'foo'"
-        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
-        self.message.setMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
+        message_bytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.set_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, message_bytes)
 
         # Raw
-        sourceType = 2
+        source_type = 2
         message = bytearray('foo', 'utf-8')
-        self.message.setMessageFrom(sourceType, message, isFuzzed)
+        self.message.set_message_from(source_type, message, is_fuzzed)
         self.assertEqual(self.message.subcomponents[0].message, message)
 
 
-    def test_appendMessageFrom(self):
-        isFuzzed = False
+    def test_append_message_from(self):
+        is_fuzzed = False
         # commaSeperatedHex
-        sourceType = 0
+        source_type = 0
         message = '01,02,20,2a'.replace(',','')
-        messageBytes = bytearray.fromhex(message)
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[0].message, messageBytes)
+        message_bytes = bytearray.fromhex(message)
+        self.message.append_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[0].message, message_bytes)
         # Ascii
-        sourceType = 1
+        source_type = 1
         message = "'foo'"
-        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[1].message, messageBytes)
+        message_bytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.append_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[1].message, message_bytes)
         # Raw
-        sourceType = 2
+        source_type = 2
         message = bytearray('foo', 'utf-8')
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.message.append_message_from(source_type, message, is_fuzzed)
         self.assertEqual(self.message.subcomponents[2].message, message)
 
-        # ---- isFuzzed  = True
-        isFuzzed = True
+        # ---- is_fuzzed  = True
+        is_fuzzed = True
         # commaSeperatedHex
-        sourceType = 0
+        source_type = 0
         message = '01,02,20,2a'.replace(',','')
-        messageBytes = bytearray.fromhex(message)
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[3].message, messageBytes)
-        self.assertTrue(self.message.isFuzzed)
+        message_bytes = bytearray.fromhex(message)
+        self.message.append_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[3].message, message_bytes)
+        self.assertTrue(self.message.is_fuzzed)
         # Ascii
-        sourceType = 1
+        source_type = 1
         message = "'foo'"
-        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[4].message, messageBytes)
-        self.assertTrue(self.message.isFuzzed)
+        message_bytes = bytearray(ast.literal_eval(f'b{message}'))
+        self.message.append_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[4].message, message_bytes)
+        self.assertTrue(self.message.is_fuzzed)
         # Raw
-        sourceType = 2
+        source_type = 2
         message = bytearray('foo', 'utf-8')
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
+        self.message.append_message_from(source_type, message, is_fuzzed)
         self.assertEqual(self.message.subcomponents[5].message, message)
-        self.assertTrue(self.message.isFuzzed)
+        self.assertTrue(self.message.is_fuzzed)
 
-        # ----- createNewSubcomponent = False
-        appendedMessage = message
-        createNewSubcomponent = False
+        # ----- create_new_subcomponent = False
+        appended_message = message
+        create_new_subcomponent = False
         # commaSeperatedHex
-        sourceType = 0
+        source_type = 0
         message = '01,02,20,2a'.replace(',','')
-        messageBytes = bytearray.fromhex(message)
-        appendedMessage  += messageBytes
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[5].message, appendedMessage)
+        message_bytes = bytearray.fromhex(message)
+        appended_message  += message_bytes
+        self.message.append_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[5].message, appended_message)
         # Ascii
-        sourceType = 1
+        source_type = 1
         message = "'foo'"
-        messageBytes = bytearray(ast.literal_eval(f'b{message}'))
-        appendedMessage += messageBytes
-        self.message.appendMessageFrom(sourceType, message, isFuzzed)
-        self.assertEqual(self.message.subcomponents[5].message, appendedMessage)
+        message_bytes = bytearray(ast.literal_eval(f'b{message}'))
+        appended_message += message_bytes
+        self.message.append_message_from(source_type, message, is_fuzzed)
+        self.assertEqual(self.message.subcomponents[5].message, appended_message)
         # Raw
-        sourceType = 2
+        source_type = 2
         message = bytearray('foo', 'utf-8')
-        appendedMessage += message
-        self.message.appendMessageFrom(sourceType, message, isFuzzed, createNewSubcomponent)
-        self.assertEqual(self.message.subcomponents[5].message, appendedMessage)
+        appended_message += message
+        self.message.append_message_from(source_type, message, is_fuzzed, create_new_subcomponent)
+        self.assertEqual(self.message.subcomponents[5].message, appended_message)
 
 
-
-    def test_isOutbound(self):
+    def test_is_outbound(self):
         self.message.direction =  "outbound"
-        self.assertTrue(self.message.isOutbound())
+        self.assertTrue(self.message.is_outbound())
 
         self.message.direction = "inbound"
-        self.assertFalse(self.message.isOutbound())
+        self.assertFalse(self.message.is_outbound())
 
         self.message.direction = "invalidDirection"
-        self.assertFalse(self.message.isOutbound())
+        self.assertFalse(self.message.is_outbound())
     
 
     def test___eq__(self):
@@ -243,6 +242,7 @@ class TestMessage(unittest.TestCase):
         self.assertFalse(m1 == m2)
 
 
+    # FIXME: add james' serialization tests here
     def test_serializeByteArray(self):
         pass
 

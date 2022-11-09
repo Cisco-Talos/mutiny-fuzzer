@@ -21,8 +21,7 @@ from mutiny_classes.message_processor import MessageProcessorExtraParams, Messag
 from mutiny_classes.exception_processor import ExceptionProcessor
 from backend.fuzzer_data import FuzzerData
 from backend.fuzzer_connection import FuzzerConnection
-from backend.menu_functions import prompt, promptInt, promptString, validateNumberRange
-from backend.fuzz_file_prep import prep
+from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range
 
 class Mutiny(object):
 
