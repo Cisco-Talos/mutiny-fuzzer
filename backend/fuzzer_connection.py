@@ -16,21 +16,30 @@ class FuzzerConnection(object):
     - creating connections to the target process
     - sending/receiving packets to the target process
     '''
-    def __init__(self, proto, host, port, src_ip, src_port, seed):
+    def __init__(self, proto, host, port, src_ip, src_port, testing=False):
         '''
         handles the creation of a network connection for the fuzzing session and returns the connection
+        
+        params:
+            - proto: network protocol
+            - host: target host to connect to
+            - port: target port to connect to
+            - src_ip: ip address to initiate the connection from if specified in .fuzzer file
+            - src_port: port to initiate the connection from
+            - testing: flag to stop execution before creation of the connection if testing
+
         '''
         self.proto = proto
         self.host = host
         self.target_port = port
         self.source_ip = src_ip
         self.source_port = src_port
-        self.seed = seed
         self.addr = None
         if self.proto != "L2raw" and self.proto not in PROTO:
             print_error(f'Unknown protocol: {self.proto}')
             sys.exit(-1)
-
+        if testing:
+            return
 
         # determine format of address to use based on protocol
         self._get_addr()
@@ -123,7 +132,7 @@ class FuzzerConnection(object):
             self.connection = socket.socket(self.socket_family, socket.SOCK_RAW, proto_num)
             # Disable automatically ading headers for us
             # Not needed for IPPROTO_RAW or 0x300 - if added, will break
-           if self.proto != 'L2raw' and self.proto != 'raw':
+            if self.proto != 'L2raw' and self.proto != 'raw':
                 connection.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 0)
         except PermissionError:
             print_error('No permission to create raw sockets.')

@@ -10,8 +10,6 @@ from backend.fuzzer_data import FuzzerData
 
 class TestMutiny(unittest.TestCase):
 
-
-
     def setUp(self):
         self.fuzz_file_path_1 = './tests/units/input_files/test_fuzz_data_read.fuzzer'
         self.log_file_path_1 = self.fuzz_file_path_1[:-7] + '_logs'
@@ -24,12 +22,10 @@ class TestMutiny(unittest.TestCase):
         os.rmtree(self.log_file_path_1)
         pass
 
-
-
-    def test_performRun(self):
+    def test_perform_run(self):
         pass
 
-    def test_getRunNumbersFromArgs(self):
+    def test_get_run_numbers_from_args(self):
         min_run = ''
         max_run = ''
         # subsequent
@@ -80,7 +76,7 @@ class TestMutiny(unittest.TestCase):
         cli_sock.close()
         serv.close()
 
-    def test_fuzzSetup(self):
+    def test_fuzz_setup(self):
         mutiny.fuzzSetup(self.args, testing=True)
         # let fuzzer_data.readFromFile tests verify correctness of contents, just check that it was called
         self.assertIsNotNone(self.mutiny.fuzzer_data)
