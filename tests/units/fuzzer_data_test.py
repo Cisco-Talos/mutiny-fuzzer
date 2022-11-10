@@ -6,9 +6,9 @@ class TestFuzzerData(unittest.TestCase):
 
     def setUp(self):
         self.fuzz_data = FuzzerData()
-        self.read_file_1 = './tests/units/input_files/test_fuzz_data_read.fuzzer'
-        self.read_file_2 = './tests/units/input_files/test_fuzz_data_read_non_default.fuzzer'
-        self.write_file_1 = './tests/units/input_files/test_write_to_file.fuzzer'
+        self.read_file_1 = './tests/assets/test_fuzz_data_read.fuzzer'
+        self.read_file_2 = './tests/assets/test_fuzz_data_read_non_default.fuzzer'
+        self.write_file_1 = './tests/assets/test_write_to_file.fuzzer'
 
     def tearDown(self):
         pass
