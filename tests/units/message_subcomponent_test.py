@@ -3,7 +3,7 @@ from backend.fuzzer_types import MessageSubComponent
 
 class Testmessage_sub_component(unittest.TestCase):
     def setUp(self):
-        self.message_sub_momponent = MessageSubComponent('message', False)
+        self.message_sub_component = MessageSubComponent('message', False)
 
     def tearDown(self):
         self.message_sub_component = None
@@ -13,7 +13,7 @@ class Testmessage_sub_component(unittest.TestCase):
         self.assertEqual(self.message_sub_component.message, 'message')
         self.assertEqual(self.message_sub_component.is_fuzzed,False)
 
-        self.message_sub_component = message_sub_component('', True)
+        self.message_sub_component = MessageSubComponent('', True)
         self.assertEqual(self.message_sub_component.message, '')
         self.assertEqual(self.message_sub_component.is_fuzzed,True)
 

@@ -1,6 +1,6 @@
 from backend.fuzzer_connection import FuzzerConnection
 from backend.fuzzer_data import FuzzerData
-from tests.units.assets.mock_target import MockTarget
+from tests.assets.mock_target import MockTarget
 import threading
 from time import sleep
 import unittest
@@ -28,7 +28,7 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.proto, proto)
         self.assertEqual(conn.host, mock_if)
         self.assertEqual(conn.target_port, mock_port)
-        self.assertEqual(conn.source_ip, src_ip)
+        self.assertEqual(conn.source_ip, src_if)
         self.assertEqual(conn.source_port, src_port)
         self.assertEqual(conn.addr, (mock_if, mock_port))
         self.assertEqual(conn.connection.family, socket.AF_INET)
@@ -52,7 +52,7 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.proto, proto)
         self.assertEqual(conn.host, mock_if)
         self.assertEqual(conn.target_port, mock_port)
-        self.assertEqual(conn.source_ip, src_ip)
+        self.assertEqual(conn.source_ip, src_if)
         self.assertEqual(conn.source_port, src_port)
         self.assertEqual(conn.addr, (mock_if, mock_port))
         self.assertEqual(conn.connection.family, socket.AF_INET6)

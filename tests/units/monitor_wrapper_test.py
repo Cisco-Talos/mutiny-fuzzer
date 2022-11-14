@@ -7,6 +7,12 @@ from mutiny_classes.mutiny_exceptions import *
 from mutiny_classes import monitor
 
 class TestMonitorWrapper(unittest.TestCase):
+    def setUp(self):
+        pass
+
+    def tearDown(self):
+        pass
+
     # This monitor will immediately "Crash"
     class MonitorCrash(object):
         is_enabled = True
@@ -27,19 +33,13 @@ class TestMonitorWrapper(unittest.TestCase):
     # This monitor raises SignalMain without an exception
     class MonitorNonException(object):
         is_enabled = True
-        def monitorTarget(self, target_ip, target_port, signal_main):
+        def monitor_target(self, target_ip, target_port, signal_main):
             signal_main('This should fail, requires an exception, not a string')
 
     # This monitor doesn't have is_enabled defined
     class MonitorNoIsEnabled(object):
         def monitor_target(self, target_ip, target_port, signal_main):
             pass
-
-    def setUp(self):
-        pass
-
-    def tearDown(self):
-        pass
 
     # Test the default monitor bundled with Mutiny - should not crash
     def test_default_monitor(self):
