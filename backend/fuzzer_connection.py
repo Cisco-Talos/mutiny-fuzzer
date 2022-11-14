@@ -156,8 +156,6 @@ class FuzzerConnection(object):
         else:
             addrs = socket.getaddrinfo(self.host, self.target_port)
             self.host = addrs[0][4][0]
-            if self.host == "::1":
-                self.host = "127.0.0.1"
             
             # cheap testing for ipv6/ipv4/unix
             # don't think it's worth using regex for this, since the user
