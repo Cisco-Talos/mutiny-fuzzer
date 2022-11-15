@@ -8,6 +8,7 @@ sys.path.append(parent)
 from mutiny_classes import mutiny_exceptions
 from backend.packets import PROTO
 from backend.fuzzer_types import Message
+from backend.menu_functions import print_error, print_warning, print_success
 
 class FuzzerConnection(object):
     '''
@@ -35,7 +36,7 @@ class FuzzerConnection(object):
         self.source_ip = src_ip
         self.source_port = src_port
         self.addr = None
-        if self.proto != "L2raw" and self.proto not in PROTO:
+        if self.proto != "L2raw" and self.proto != 'tls' and self.proto not in PROTO:
             print_error(f'Unknown protocol: {self.proto}')
             sys.exit(-1)
         if testing:
@@ -68,7 +69,7 @@ class FuzzerConnection(object):
         print("\tSent %d byte packet" % (len(data)))
 
 
-    def receive_packet(self, bytes_to_read: int, timeout):
+    def receive_packet(self, bytes_to_read: int, timeout: float):
         read_buf_size = 4096
         self.connection.settimeout(timeout)
 
@@ -120,6 +121,7 @@ class FuzzerConnection(object):
         else:
             # Handle target environment that doesn't support HTTPS verification
             ssl._create_default_https_context = _create_unverified_https_context
+
         tcp_connection = socket.socket(self.socket_family, socket.SOCK_STREAM)
         self.connection = ssl.wrap_socket(tcp_connection)
         self._bind_to_interface()
@@ -156,7 +158,7 @@ class FuzzerConnection(object):
         else:
             addrs = socket.getaddrinfo(self.host, self.target_port)
             self.host = addrs[0][4][0]
-            
+
             # cheap testing for ipv6/ipv4/unix
             # don't think it's worth using regex for this, since the user
             # will have to actively go out of their way to subvert this.

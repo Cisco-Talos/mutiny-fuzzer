@@ -50,21 +50,20 @@ class MockTarget(object):
             self.conn = socket.socket(socket_family, socket.SOCK_STREAM)
             self.conn.bind((self.listen_if, self.listen_port))
             self.conn.listen()
-            self.conn.accept()
+            self.conn = self.conn.accept()[0]
         elif self.proto == 'tls':
             socket_family = socket.AF_INET if '.' in self.listen_if else socket.AF_INET6
             self.conn = socket.socket(socket_family, socket.SOCK_STREAM)
-            self.conn.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
             try:
                 _create_unverified_https_context = ssl._create_unverified_context
             except AttributeError:
                 pass
             else:
                 ssl._create_default_https_context = _create_unverified_https_context
-                self.conn = ssl.wrap_socket(test_conn)
+            self.conn = ssl.wrap_socket(self.conn)
             self.conn.bind((self.listen_if, self.listen_port))
             self.conn.listen()
-            self.conn.accept()
+            self.conn = self.conn.accept()[0]
         elif self.proto == 'udp':
             socket_family = socket.AF_INET if  '.' in self.listen_if else socket.AF_INET6
             self.conn = socket.socket(socket_family, socket.SOCK_DGRAM)
@@ -81,7 +80,7 @@ class MockTarget(object):
         if self.conn.type == socket.SOCK_STREAM or self.conn.type == socket.SOCK_DGRAM or self.conn.type == socket.SOCK_RAW:
             self.incoming_buffer.append(bytearray(self.conn.recv(packet_len)))
         else:
-            response, addr = bytearray(self.conn.recvefrom(packet_len))
+            response, addr = bytearray(self.conn.recvfrom(packet_len))
 
 
     def send_packet(self, data, addr):
