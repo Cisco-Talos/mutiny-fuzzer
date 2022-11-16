@@ -5,7 +5,7 @@ import os
 current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
 sys.path.append(parent)
-from mutiny_classes import mutiny_exceptions
+from mutiny_classes.mutiny_exceptions import ConnectionClosedException
 from backend.packets import PROTO
 from backend.fuzzer_types import Message
 from backend.menu_functions import print_error, print_warning, print_success

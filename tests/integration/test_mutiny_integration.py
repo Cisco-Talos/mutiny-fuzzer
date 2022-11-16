@@ -46,7 +46,7 @@ def test_1():
         - prepped_fuzz: ./tests/assets/test_mutiny_integration_1.fuzzer
         - target_host: 127.0.0.1
         - sleep_time: 0
-        - range: 0-20
+        - range: 0-19
         - loop: None
         - dump_raw: 0
         - quiet: False
@@ -60,13 +60,17 @@ def test_1():
         - port: 7777
         - source_port: -1
         - source_ip: 0.0.0.0
+
+        fuzzes until it finds a 'crash' at seed=19, then sends a pause, 
+        sleeps, then sends a resume. Fuzzing stops on seed 19, since a
+        range of 0-19 was specified
     '''
     target_if = '127.0.0.1'
     target_port = 7777
     proto = 'tcp'
     prepped_fuzz = './tests/assets/test_mutiny_integration_1.fuzzer'
     # populate args
-    args = Namespace(prepped_fuzz=prepped_fuzz, target_host = target_if, sleep_time = 0, range = '0-23', loop = None, dump_raw = None, quiet = False, log_all = False)
+    args = Namespace(prepped_fuzz=prepped_fuzz, target_host = target_if, sleep_time = 0, range = '0-19', loop = None, dump_raw = None, quiet = False, log_all = False)
 
     # stand up target server
     target = target_1(proto, target_if, target_port)
@@ -82,8 +86,9 @@ def test_1():
     fuzz_thread = threading.Thread(target=fuzzer.fuzz(True), args=())
     fuzz_thread.start()
     fuzz_thread.join()
-    print('out of fuzzer')
     target_thread.join()
+    target.communication_conn.close()
+    target.listen_conn.close()
     
 
 def test_2():
@@ -111,6 +116,8 @@ class target_1(MockTarget):
                 assert result == bytearray('magic phrase:ppppppppppppppppppppasswordpasswordpassswordpwordpassswordpassswordpassswordpasswordpasswordpasssword', 'utf-8')
                 with open('./tests/assets/integration_test_1_crash.log', 'w') as file:
                     file.write('crashed')
+                    self.communication_conn.close()
+                    self.listen_conn.close()
                 return
             self.send_packet(bytearray('incorrect magic phrase, try again!', 'utf-8'), addr = None)
             self.communication_conn = self.listen_conn.accept()[0]
