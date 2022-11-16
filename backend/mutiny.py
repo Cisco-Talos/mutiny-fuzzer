@@ -11,6 +11,7 @@ import threading
 import time
 import argparse
 import ssl
+import platform
 import scapy.all
 from copy import deepcopy
 from backend.proc_director import ProcDirector
@@ -21,7 +22,7 @@ from mutiny_classes.message_processor import MessageProcessorExtraParams, Messag
 from mutiny_classes.exception_processor import ExceptionProcessor
 from backend.fuzzer_data import FuzzerData
 from backend.fuzzer_connection import FuzzerConnection
-from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range
+from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range, print_warning, print_success, print_success
 
 class Mutiny(object):
 
@@ -64,6 +65,13 @@ class Mutiny(object):
                     pass
 
         self.connection = None # connection to target
+
+        # verify raw socket fuzzing is currently supported on user architecture
+        if self.fuzzer_data.proto == 'L2raw':
+            if platform.uname().system == 'Darwin':
+                print_error('Raw socket fuzzing is currently unsupported on OSX')
+                exit(-1)
+
 
 
     def import_custom_processors(self):
@@ -112,7 +120,7 @@ class Mutiny(object):
                 # Intentionally do this before and after a run in case we have back-to-back exceptions
                 # (Example: Crash, then Pause, then Resume
                 self.__raise_next_monitor_event_if_any(is_paused)
-                
+
                 if is_paused:
                     # Busy wait, might want to do something more clever with Condition or Event later
                     time.sleep(0.5)
@@ -143,7 +151,7 @@ class Mutiny(object):
                             self.logger.output_log(iteration, self.fuzzer_data.message_collection, "log_all ")
                         except AttributeError:
                             pass
-                    
+
                     if e.__class__ in MessageProcessorExceptions.all:
                         # If it's a MessageProcessorException, assume the MP raised it during the run
                         # Otherwise, let the MP know about the exception
@@ -152,7 +160,7 @@ class Mutiny(object):
                         self.exception_processor.process_exception(e)
                         # Will not get here if processException raises another exception
                         print_warning("Exception ignored: %s" % (repr(e)))
-                
+
                 # Check for any exceptions from Monitor
                 # Intentionally do this before and after a run in case we have back-to-back exceptions
                 # (Example: Crash, then Pause, then Resume
@@ -189,13 +197,13 @@ class Mutiny(object):
                 # Give up on the run early, but continue to the next test
                 # This means the run didn't produce anything meaningful according to the processor
                 print_warning("Run aborted: %s" % (str(e)))
-            
+
             except RetryCurrentRunException as e:
                 # Same as AbortCurrentRun but retry the current test rather than skipping to next
                 print_warning("Retrying current run: %s" % (str(e)))
                 # Slightly sketchy - a continue *should* just go to the top of the while without changing i
                 continue
-                
+
             except LogAndHaltException as e:
                 if self.logger:
                     self.logger.output_log(iteration, self.fuzzer_data.message_collection, str(e))
@@ -203,7 +211,7 @@ class Mutiny(object):
                 else:
                     print_warning("Received LogAndHaltException, halting but not logging (quiet mode)")
                 exit()
-                
+
             except LogLastAndHaltException as e:
                 if self.logger:
                     if iteration > self.min_run_number:
@@ -235,7 +243,7 @@ class Mutiny(object):
                     iteration += 1
             else:
                 iteration += 1
-            
+
             # Stop if we have a maximum and have hit it
             if self.max_run_number >= 0 and iteration > self.max_run_number:
                 exit()
@@ -253,7 +261,7 @@ class Mutiny(object):
         # Otherwise, if connection is refused, we'll log last, but it will be wrong
         if self.logger:
             self.logger.reset_for_new_run()
-        
+
         # Call messageprocessor preconnect callback if it exists
         try:
             self.message_processor.pre_connect(seed, self.target_host, self.fuzzer_data.target_port) 
@@ -266,7 +274,7 @@ class Mutiny(object):
         message_num = 0   
         for message_num in range(0, len(self.fuzzer_data.message_collection.messages)):
             message = self.fuzzer_data.message_collection.messages[message_num]
-            
+
             # Go ahead and revert any fuzzing or messageprocessor changes before proceeding
             message.reset_altered_message()
 
@@ -304,7 +312,7 @@ class Mutiny(object):
 
         # Get original subcomponents for outbound callback only once
         original_subcomponents = [subcomponent.get_original_byte_array() for subcomponent in message.subcomponents]
-        
+
         if message_has_subcomponents:
             # For message with subcomponents, call prefuzz on fuzzed subcomponents
             for subcomponent_num in range(0, len(message.subcomponents)):
@@ -325,7 +333,7 @@ class Mutiny(object):
         if seed > -1:
             # Now run the fuzzer for each fuzzed subcomponent
             self._fuzz_subcomponents(message, seed)
-        
+
         # Fuzzing has now been done if this message is fuzzed
         # Always call preSend() regardless for subcomponents if there are any
         if message_has_subcomponents:
@@ -354,7 +362,7 @@ class Mutiny(object):
             print("\tRaw Bytes: %s" % (Message.serialize_byte_array(byte_array_to_send)))
 
 
-    def _fuzz_subcomponents(message, seed):
+    def _fuzz_subcomponents(self, message, seed):
         '''
         iterates through each subcomponent in a message and uses radamsa to generate fuzzed
         versions of each subcomponent if its .isFuzzed is set to True
@@ -373,7 +381,7 @@ class Mutiny(object):
         if not self.monitor.queue.empty():
             print_warning('Monitor event detected')
             exception = self.monitor.queue.get()
-            
+
             if is_paused:
                 if isinstance(exception, PauseFuzzingException):
                     # Duplicate pauses are fine, a no-op though
@@ -387,7 +395,7 @@ class Mutiny(object):
             raise exception
 
     def _get_run_numbers_from_args(self, str_args):
-    # Set MIN_RUN_NUMBER and MAX_RUN_NUMBER when provided
+        # Set MIN_RUN_NUMBER and MAX_RUN_NUMBER when provided
     # by the user below
         if "-" in str_args:
             test_numbers = str_args.split("-")
