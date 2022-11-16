@@ -6,7 +6,6 @@ import signal
 import socket
 import subprocess
 import sys
-import threading
 import time
 import argparse
 import ssl
@@ -21,7 +20,7 @@ from mutiny_classes.message_processor import MessageProcessorExtraParams, Messag
 from mutiny_classes.exception_processor import ExceptionProcessor
 from backend.fuzzer_data import FuzzerData
 from backend.fuzzer_connection import FuzzerConnection
-from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range, print_warning, print_success, print_success
+from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range, print_warning, print_success, print_error
 
 class Mutiny(object):
 
@@ -38,6 +37,9 @@ class Mutiny(object):
         self.log_all = args.log_all if not self.quiet else False # kinda weird/redundant verbosity flags? 
         self.fuzzer_folder = os.path.abspath(os.path.dirname(fuzzer_file_path))
         self.output_data_folder_path = os.path.join("%s_%s" % (os.path.splitext(fuzzer_file_path)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
+        self.min_run_number = 0
+        self.max_run_number = -1
+        self.seed_loop = []
 
         #Assign Lower/Upper bounds on test cases as needed
         if args.range:
@@ -101,7 +103,7 @@ class Mutiny(object):
         self.message_processor = proc_director.message_processor()
 
 
-    def fuzz(self):
+    def fuzz(self, testing=False):
         iteration = self.min_run_number - 1 if self.fuzzer_data.should_perform_test_run else self.min_run_number
         failure_count = 0
         loop_len = len(self.seed_loop) # if --loop
@@ -118,7 +120,7 @@ class Mutiny(object):
                 # Check for any exceptions from Monitor
                 # Intentionally do this before and after a run in case we have back-to-back exceptions
                 # (Example: Crash, then Pause, then Resume
-                self.__raise_next_monitor_event_if_any(is_paused)
+                self._raise_next_monitor_event_if_any(is_paused)
 
                 if is_paused:
                     # Busy wait, might want to do something more clever with Condition or Event later
@@ -209,7 +211,10 @@ class Mutiny(object):
                     print_warning("Received LogAndHaltException, logging and halting")
                 else:
                     print_warning("Received LogAndHaltException, halting but not logging (quiet mode)")
-                exit()
+                if testing:
+                    return
+                else:
+                    exit()
 
             except LogLastAndHaltException as e:
                 if self.logger:
@@ -225,11 +230,17 @@ class Mutiny(object):
                         print_warning("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
                 else:
                     print_warning("Received LogLastAndHaltException, halting but not logging (quiet mode)")
-                exit()
+                if testing:
+                    return
+                else:
+                    exit()
 
             except HaltException as e:
-                print_warning("Received HaltException halting")
-                exit()
+                print_warning("Received HaltException, halting the fuzzing campaign")
+                if testing:
+                    return
+                else:
+                    exit()
 
             if was_crash_detected:
                 if failure_count < self.fuzzer_data.failure_threshold:
@@ -245,10 +256,17 @@ class Mutiny(object):
 
             # Stop if we have a maximum and have hit it
             if self.max_run_number >= 0 and iteration > self.max_run_number:
-                exit()
+                print_success('Met acceptable fuzzing range, gracefully shutting down...')
+                if testing:
+                    return
+                else:
+                    exit()
 
             if self.dump_raw:
-                exit()
+                if testing:
+                    return
+                else:
+                    exit()
 
 
     def _perform_run(self, seed: int = -1):
@@ -268,7 +286,7 @@ class Mutiny(object):
             pass
 
         # create a connection to the target process
-        self.connection = FuzzerConnection.connection(self.fuzzer_data.proto, self.target_host, self.fuzzer_data.target_port, self.fuzzer_data.source_ip, self.fuzzer_data.source_port, seed)
+        self.connection = FuzzerConnection(self.fuzzer_data.proto, self.target_host, self.fuzzer_data.target_port, self.fuzzer_data.source_ip, self.fuzzer_data.source_port)
 
         message_num = 0   
         for message_num in range(0, len(self.fuzzer_data.message_collection.messages)):
@@ -278,7 +296,7 @@ class Mutiny(object):
             message.reset_altered_message()
 
             if message.is_outbound():
-                self._send_fuzz_session_message(messsage_num, message, seed)
+                self._send_fuzz_session_message(message_num, message, seed)
             else: 
                 self._receive_fuzz_session_message(message_num, message)
 

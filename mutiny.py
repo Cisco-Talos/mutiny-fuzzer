@@ -44,9 +44,10 @@ from backend.mutiny import Mutiny
 from backend.menu_functions import print_warning, print_error, print_success
 
 # Path to Radamsa binary
-RADAMSA = os.path.abspath( os.path.join(__file__, "../radamsa/bin/radamsa") )
+RADAMSA = os.path.abspath( os.path.join(__file__, '../radamsa/bin/radamsa') )
 TESTING = False
 DEBUG = False
+print(__name__)
 
 # Set up signal handler for CTRL+C
 def sigint_handler(signal: int, frame: object):

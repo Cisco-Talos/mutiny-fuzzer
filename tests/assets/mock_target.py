@@ -47,44 +47,44 @@ class MockTarget(object):
     def accept_connection(self): 
         if self.proto == 'tcp':
             socket_family = socket.AF_INET if '.' in self.listen_if else socket.AF_INET6
-            self.conn = socket.socket(socket_family, socket.SOCK_STREAM)
-            self.conn.bind((self.listen_if, self.listen_port))
-            self.conn.listen()
-            self.conn = self.conn.accept()[0]
+            self.listen_conn = socket.socket(socket_family, socket.SOCK_STREAM)
+            self.listen_conn.bind((self.listen_if, self.listen_port))
+            self.listen_conn.listen()
+            self.communication_conn = self.listen_conn.accept()[0]
         elif self.proto == 'tls':
             socket_family = socket.AF_INET if '.' in self.listen_if else socket.AF_INET6
-            self.conn = socket.socket(socket_family, socket.SOCK_STREAM)
+            self.listen_conn = socket.socket(socket_family, socket.SOCK_STREAM)
             try:
                 _create_unverified_https_context = ssl._create_unverified_context
             except AttributeError:
                 pass
             else:
                 ssl._create_default_https_context = _create_unverified_https_context
-            self.conn = ssl.wrap_socket(self.conn)
-            self.conn.bind((self.listen_if, self.listen_port))
-            self.conn.listen()
-            self.conn = self.conn.accept()[0]
+            self.listen_conn = ssl.wrap_socket(self.listen_conn)
+            self.listen_conn.bind((self.listen_if, self.listen_port))
+            self.listen_conn.listen()
+            self.communication_conn = self.listen_conn.accept()[0]
         elif self.proto == 'udp':
             socket_family = socket.AF_INET if  '.' in self.listen_if else socket.AF_INET6
-            self.conn = socket.socket(socket_family, socket.SOCK_DGRAM)
-            self.conn.bind((self.listen_if, self.listen_port))
+            self.communication_conn = socket.socket(socket_family, socket.SOCK_DGRAM)
+            self.communication_conn.bind((self.listen_if, self.listen_port))
         else: # raw
             proto_num = 0x300 if self.proto == 'L2raw' else PROTO[self.proto]
-            self.conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, proto_num)
+            self.communication_conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, proto_num)
             if self.proto != 'L2raw' and self.proto != 'raw':
-                self.conn.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 0)
-            self.conn.bind((self.listen_if, 0))
+                self.communication_conn.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 0)
+            self.communication_conn.bind((self.listen_if, 0))
 
 
     def receive_packet(self, packet_len):
-        if self.conn.type == socket.SOCK_STREAM or self.conn.type == socket.SOCK_DGRAM or self.conn.type == socket.SOCK_RAW:
-            self.incoming_buffer.append(bytearray(self.conn.recv(packet_len)))
+        if self.communication_conn.type == socket.SOCK_STREAM or self.communication_conn.type == socket.SOCK_DGRAM or self.communication_conn.type == socket.SOCK_RAW:
+            self.incoming_buffer.append(bytearray(self.communication_conn.recv(packet_len)))
         else:
-            response, addr = bytearray(self.conn.recvfrom(packet_len))
+            response, addr = bytearray(self.communication_conn.recvfrom(packet_len))
 
 
     def send_packet(self, data, addr):
-        if self.conn.type == socket.SOCK_STREAM:
-            self.conn.send(data)
+        if self.communication_conn.type == socket.SOCK_STREAM:
+            self.communication_conn.send(data)
         else:
-            self.conn.sendto(data, addr)
+            self.communication_conn.sendto(data, addr)

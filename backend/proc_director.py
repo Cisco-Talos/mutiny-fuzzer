@@ -72,7 +72,9 @@ class ProcDirector(object):
                 file_path = os.path.join(process_dir, "{0}.py".format(file_name))
                 imp.load_source(file_name, file_path)
                 print(("Loaded custom processor: {0}".format(file_path)))
-            except IOError:
+            except IOError as e:
+                print_error('Failed to load custom processors')
+                print(repr(e))
                 # On failure, load default
                 file_path = os.path.join(default_dir, "{0}.py".format(file_name))
                 imp.load_source(file_name, file_path)
