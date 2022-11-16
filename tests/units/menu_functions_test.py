@@ -19,4 +19,5 @@ class TestMenuFunctions(unittest.TestCase):
 
     def validate_number_range(self):
         # TODO
+        pass
 

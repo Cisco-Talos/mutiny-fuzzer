@@ -33,19 +33,20 @@
 #
 #------------------------------------------------------------------
 
-# Path to Radamsa binary
-RADAMSA = os.path.abspath( os.path.join(__file__, "../radamsa/bin/radamsa") )
-TESTING = False
-DEBUG = False
 
 
-import os.path
+import os
 import signal
 import sys
 import argparse
 from backend.fuzz_file_prep import FuzzFilePrep
 from backend.mutiny import Mutiny
 from backend.menu_functions import print_warning, print_error, print_success
+
+# Path to Radamsa binary
+RADAMSA = os.path.abspath( os.path.join(__file__, "../radamsa/bin/radamsa") )
+TESTING = False
+DEBUG = False
 
 # Set up signal handler for CTRL+C
 def sigint_handler(signal: int, frame: object):
@@ -84,41 +85,30 @@ def parse_prep_args(parser):
     
 def parse_arguments():
     #TODO: add description/license/ascii art print out??
-    # FIXME: let fuzz run by default and prep indiciate a subcommand
     desc =  "======== The Mutiny Fuzzing Framework ==========" 
     epi = "==" * 24 + '\n'
     parser = argparse.ArgumentParser(description=desc,epilog=epi)
 
     sub_parsers = parser.add_subparsers(title='subcommands')
-    prep_parser = subparsers.add_parser('prep', help='convert a pcap/c_array output into a .fuzzer file') 
-    fuzz_parser = subparsers.add_parser('fuzz', help='begin fuzzing using a .fuzzer file')
+    prep_parser = sub_parsers.add_parser('prep', help='convert a pcap/c_array output into a .fuzzer file') 
+    fuzz_parser = sub_parsers.add_parser('fuzz', help='begin fuzzing using a .fuzzer file')
 
     parse_prep_args(prep_parser)
     parse_fuzz_args(fuzz_parser)
 
     return parser.parse_args()
 
-if __name__ == '__main__':
-    # Usage case
-    if len(sys.argv) < 3:
-        sys.argv.append('-h')
+def prep(args):
+    if not os.path.isfile(args.pcap_file):
+        print_error(f'Cannot read input {args.pcap_file}')
+        exit()
+    fuzz_file_prepper = FuzzFilePrep(args)
+    fuzz_file_prepper.prep()
 
-    args = parse_arguments()
-    args.func(args)
-
-    do_prep = False # FIXME: figure out how to have mutiny as default subcommand
-    if do_prep:
-        if not os.path.isfile(args.pcap_file):
-            print_error(f'Cannot read input {args.pcap_file}')
-            exit()
-
-        fuzz_file_prepper = FuzzFilePrep(args)
-        fuzz_file_prepper.prep()
-    else:
+def fuzz(args):
         #Check for dependency binaries
         if not os.path.exists(RADAMSA):
             sys.exit("Could not find radamsa in %s... did you build it?" % RADAMSA)
-
         fuzzer = Mutiny(args) 
         # set the radamasa path
         fuzzer.radamsa = RADAMSA
@@ -131,3 +121,14 @@ if __name__ == '__main__':
         fuzzer.import_custom_processors()
         # begin fuzzing 
         fuzzer.fuzz()
+
+if __name__ == '__main__':
+    # Usage case
+    if len(sys.argv) < 3:
+        sys.argv.append('-h')
+
+    args = parse_arguments()
+    args.func(args)
+
+    #FIXME: figure out how to have mutiny as default subcommand
+

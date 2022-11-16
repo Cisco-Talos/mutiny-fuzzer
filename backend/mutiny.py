@@ -1,7 +1,6 @@
 import datetime
 import errno
 import importlib
-import os.path
 import os
 import signal
 import socket
