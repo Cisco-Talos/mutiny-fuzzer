@@ -1,14 +1,12 @@
 #!/bin/sh
 
-# check that unittest and scapy are installed
-#TODO: ^^^
-# execute unit tests
-python3 -m unittest tests/units/*.py
-# TODO: pipe above output and cut out test results
+#TODO: check that dependencies are installed (unittest, scapy)
 
-# execute integration tests
+# units
+echo
+echo 'UNIT TESTING RESULTS'
+python3 -m unittest tests/units/*.py -b
+
+# integration
 python3 tests/integration/test_mutiny_integration.py
-# TODO: pipe above output and cut out test results
 
-# if -v: print total output
-# else: just print results in one nicely formatted line

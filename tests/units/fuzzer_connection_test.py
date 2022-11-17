@@ -46,7 +46,8 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.connection.family, socket.AF_INET)
         self.assertEqual(conn.connection.type, socket.SOCK_STREAM)
         listener_thread.join()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         conn.close()
     
     def test_FuzzerConnectionInit_tcp_ipv6(self):
@@ -70,7 +71,8 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.connection.family, socket.AF_INET6)
         self.assertEqual(conn.connection.type, socket.SOCK_STREAM)
         listener_thread.join()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         conn.close()
     
     def test_FuzzerConnectionInit_udp_ipv4(self):
@@ -95,7 +97,7 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.connection.type, socket.SOCK_DGRAM)
         listener_thread.join()
         conn.close()
-        target.conn.close()
+        target.communication_conn.close()
 
     def test_FuzzerConnectionInit_udp_ipv6(self):
         proto = 'udp'
@@ -144,7 +146,8 @@ class TestFuzzerConnection(unittest.TestCase):
         # TODO: add a check to verify tls is being used
         listener_thread.join()
         conn.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
     
     def test_FuzzerConnectionInit_tls_ipv6(self):
         return #FIXME: remove after addressing issue #29
@@ -170,7 +173,8 @@ class TestFuzzerConnection(unittest.TestCase):
         #TODO: add a check to verify tls is being used
         listener_thread.join()
         conn.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
     
     def test_FuzzerConnectionInit_raw(self):
         if self.platform == 'Darwin':
@@ -197,7 +201,8 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.connection.type, socket.SOCK_STREAM)
         listener_thread.join()
         conn.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
 
     def test_send_packet_tcp_ipv4(self):
         proto = 'tcp'
@@ -219,7 +224,8 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.send_packet(data, 3.0)
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(target.incoming_buffer.pop(), data)
 
     def test_send_packet_tcp_ipv6(self):
@@ -241,7 +247,8 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.send_packet(data, 3.0)
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(target.incoming_buffer.pop(), data)
 
     def test_send_packet_udp_ipv4(self):
@@ -263,7 +270,7 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.send_packet(data, 3.0)
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
         self.assertEqual(target.incoming_buffer.pop(),data)
     
     def test_send_packet_udp_ipv6(self):
@@ -285,7 +292,7 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.send_packet(data, 3.0)
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
         self.assertEqual(target.incoming_buffer.pop(),data)
 
     def test_send_packet_tls_ipv4(self):
@@ -308,7 +315,8 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.send_packet(data, 3.0)
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(target.incoming_buffer.pop(),data)
 
     def test_send_packet_tls_ipv6(self):
@@ -331,7 +339,8 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.send_packet(data, 3.0)
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(target.incoming_buffer.pop(),data)
 
     def test_send_packet_raw(self):
@@ -356,7 +365,8 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.send_packet(data, 3.0)
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(target.incoming_buffer.pop(),data)
 
 
@@ -386,7 +396,8 @@ class TestFuzzerConnection(unittest.TestCase):
         target.send_packet(data, (mock_if, mock_port))
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(self.received_data.pop(), data)
 
 
@@ -409,7 +420,8 @@ class TestFuzzerConnection(unittest.TestCase):
         target.send_packet(data, (mock_if, mock_port))
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(self.received_data.pop(), data)
 
     def test_receive_packet_udp_ipv4(self):
@@ -431,7 +443,7 @@ class TestFuzzerConnection(unittest.TestCase):
         target.send_packet(data, (src_if, src_port))
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
         self.assertEqual(self.received_data.pop(), data)
 
 
@@ -454,7 +466,7 @@ class TestFuzzerConnection(unittest.TestCase):
         target.send_packet(data, (src_if, src_port))
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
         self.assertEqual(self.received_data.pop(), data)
 
 
@@ -478,7 +490,8 @@ class TestFuzzerConnection(unittest.TestCase):
         target.send_packet(data, (src_if, src_port))
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(self.received_data.pop(), data)
 
     def test_receive_packet_tls_ipv6(self):
@@ -501,7 +514,8 @@ class TestFuzzerConnection(unittest.TestCase):
         target.send_packet(data, (src_if, src_port))
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.communication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(self.received_data.pop(), data)
 
 
@@ -527,5 +541,6 @@ class TestFuzzerConnection(unittest.TestCase):
         target.send_packet(data, (src_if, src_port))
         reception_thread.join()
         conn.connection.close()
-        target.conn.close()
+        target.commmunication_conn.close()
+        target.listen_conn.close()
         self.assertEqual(self.received_data.pop(), data)

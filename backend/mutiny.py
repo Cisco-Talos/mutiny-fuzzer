@@ -10,6 +10,8 @@ import time
 import argparse
 import ssl
 import platform
+import logging
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 import scapy.all
 from copy import deepcopy
 from backend.proc_director import ProcDirector

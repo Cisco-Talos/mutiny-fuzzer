@@ -23,6 +23,8 @@ from backend.fuzzer_types import Message, MessageCollection, Logger
 from backend.menu_functions import prompt, prompt_int, prompt_string, validate_number_range, print_success, print_warning, print_error
 from backend.fuzzer_data import FuzzerData
 from backend.packets import PROTO
+import logging
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 import scapy.all
 
 class FuzzFilePrep(object):
