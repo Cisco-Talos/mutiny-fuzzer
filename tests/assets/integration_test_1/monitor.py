@@ -47,31 +47,15 @@ class Monitor(object):
     
     # This function will run asynchronously in a different thread to monitor the host
     def monitor_target(self, target_ip, target_port, signal_main):
-        # Can do something like:
-        # while True:
-        #   read file, etc
-        #   if errorConditionHasOccurred:
-        #       exception = LogCrashException('Information about the crash')
-        #       exception.extra_data = 'Can add arbitrary Python objects or other data as members'
-        #       signal_main(LogCrashException(exception)
         while True:
             log_file = open('./tests/assets/integration_test_1/crash.log', 'r')
             if 'crashed' in log_file.readlines():
                 exception = LogCrashException('crashed')
                 signal_main(LogCrashException(exception))
-                signal_main(PauseFuzzingException('sleeping for 10 seconds'))
+                signal_main(PauseFuzzingException('Sleeping for 10 seconds'))
                 log_file.close()
-                log_file = open('./tests/assets/integration_test_1_crash.log', 'w')
+                log_file = open('./tests/assets/integration_test_1/crash.log', 'w')
                 log_file.write('')
                 log_file.close()
                 sleep(.05)
                 signal_main(ResumeFuzzingException())
-
-
-            
-        #
-        # Calling signal_main() at any time will indicate to Mutiny
-        # that the target has crashed and a crash should be logged
-        #
-        # Exception will be passed to exception processor
-        pass

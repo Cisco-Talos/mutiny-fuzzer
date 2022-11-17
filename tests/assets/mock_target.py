@@ -69,6 +69,7 @@ class MockTarget(object):
             self.communication_conn = socket.socket(socket_family, socket.SOCK_DGRAM)
             self.communication_conn.bind((self.listen_if, self.listen_port))
         else: # raw
+            print('creating raw socket')
             proto_num = 0x300 if self.proto == 'L2raw' else PROTO[self.proto]
             self.communication_conn = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, proto_num)
             if self.proto != 'L2raw' and self.proto != 'raw':
