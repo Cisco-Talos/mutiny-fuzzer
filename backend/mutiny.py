@@ -414,20 +414,22 @@ class Mutiny(object):
             raise exception
 
     def _get_run_numbers_from_args(self, str_args):
-        # Set MIN_RUN_NUMBER and MAX_RUN_NUMBER when provided
-    # by the user below
+        '''
+        Set MIN_RUN_NUMBER and MAX_RUN_NUMBER when provided
+        by the user below
+        '''
         if "-" in str_args:
             test_numbers = str_args.split("-")
             if len(test_numbers) == 2:
                 if len(test_numbers[1]): #e.g. str_args="1-50"
                     # cant have min > max
                     if (int(test_numbers[0]) > int(test_numbers[1])):
-                        sys.exit("Invalid test range given: %s" % str_args)
+                        exit("Invalid test range given: %s" % str_args)
                     return (int(test_numbers[0]), int(test_numbers[1]))
                 else:                   #e.g. str_args="3-" (equiv. of --skip-to)
                     return (int(test_numbers[0]),-1)
             else: #e.g. str_args="1-2-3-5.." 
-                sys.exit("Invalid test range given: %s" % str_args)
+                exit("Invalid test range given: %s" % str_args)
         else:
             # If they pass a non-int, allow this to bomb out
             return (int(str_args),int(str_args)) 
