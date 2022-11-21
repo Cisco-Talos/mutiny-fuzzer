@@ -187,7 +187,7 @@ class FuzzFilePrep(object):
                 self.fuzzer_data.proto = 'tcp'
                 print('Protocol is TCP')
             else:
-                print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to do set "--raw" for Layer 2 fuzzing?')
+                print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to set "--raw" for Layer 2 fuzzing?')
                 exit()
             # is not a raw socket, can grab ports
             # First packet will usually but not always come from client
@@ -324,7 +324,6 @@ class FuzzFilePrep(object):
             self.fuzzer_data.target_port = self.default_port
             self.fuzzer_data.failure_threshold = 3
             self.fuzzer_data.failure_timeout = 5
-            self.fuzzer_data.proto = 'tcp'
         else:
             # ask how many times we should repeat a failed test, as in one causing a crash
             self.fuzzer_data.failure_threshold = failure_threshold if failure_threshold else prompt_int("\nHow many times should a test case causing a crash or error be repeated?", default_response=3)
