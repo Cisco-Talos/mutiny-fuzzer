@@ -154,16 +154,18 @@ class IntegrationSuite(object):
             in order to verify correct resumption from last_seed_tried
         '''
         self.total_tests += 1
-        self.block_print() 
+        #self.block_print() 
         # populate args
-        args = Namespace(prepped_fuzz = prepped_fuzzer_file, target_host = self.target_if, sleep_time = 0, range = None, loop = None, dump_raw = None, quiet = False, log_all = False, testing = True)
+        args = Namespace(prepped_fuzz = prepped_fuzzer_file, target_host = self.target_if, sleep_time = 0, range = '0-20', loop = None, dump_raw = None, quiet = False, log_all = False, testing = True)
 
         # stand up target server
         target = Target3(proto, self.target_if, target_port)
+        log_dir = prepped_fuzzer_file.split('.')[0] + '_logs'
         # run mutiny
         fuzzer = Mutiny(args)
         fuzzer.radamsa = os.path.abspath( os.path.join(__file__, '../../../radamsa-0.6/bin/radamsa'))
         fuzzer.import_custom_processors()
+        fuzzer.max_run_number = 20
         fuzzer.debug = False
         # start listening for the fuzz sessions
         target_thread = threading.Thread(target=target.accept_fuzz, args=())
@@ -172,11 +174,29 @@ class IntegrationSuite(object):
         fuzz_thread = threading.Thread(target=fuzzer.fuzz(), args=())
         fuzz_thread.start()
         fuzz_thread.join()
-        target_thread.join()
+        shutil.rmtree(log_dir)
+
+        assert fuzzer.fuzzer_data.last_seed_tried == 20 # verify seed was saved
+
+        # restart to test resumption from last_seed_tried
+        args.range = None
+        fuzzer = Mutiny(args) 
+        fuzzer.radamsa = os.path.abspath( os.path.join(__file__, '../../../radamsa-0.6/bin/radamsa'))
+        fuzzer.import_custom_processors()
+        fuzzer.debug = False
+        assert fuzzer.min_run_number == 20 # verify seed is used to start
+        # change max_run_number to 21 so we dont have to interrupt execution with monitor
+        fuzzer.max_run_number = 21
+        fuzz_thread = threading.Thread(target=fuzzer.fuzz(), args=())
+        fuzz_thread.start()
+        fuzz_thread.join()
+        assert fuzzer.fuzzer_data.last_seed_tried == 21 # verify seed was saved
         target.communication_conn.close()
+        target.communication_conn = None
         target.listen_conn.close()
-        self.enable_print()
         self.passed_tests += 1
+        self.enable_print()
+        shutil.rmtree(log_dir)
         
 
     def block_print(self):
@@ -215,26 +235,26 @@ def main():
 
     try: # SINGLE OUTBOUND LINE -> CRASH -> HALT
         #tcp
-        suite.test_2(target_port= 7771, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_2/tcp.fuzzer')
+        pass
+        #suite.test_2(target_port= 7776, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_2/tcp.fuzzer')
         # udp 
-        #suite.test_2(target_port= 7770, proto = 'udp', prepped_fuzzer_file = 'tests/assets/integration_test_2/udp.fuzzer')
+        #suite.test_2(target_port= 7777, proto = 'udp', prepped_fuzzer_file = 'tests/assets/integration_test_2/udp.fuzzer')
         # ssl
-        #suite.test_2(target_port= 7769, proto = 'ssl', prepped_fuzzer_file = 'tests/assets/integration_test_2/ssl.fuzzer')
+        #suite.test_2(target_port= 7778, proto = 'ssl', prepped_fuzzer_file = 'tests/assets/integration_test_2/ssl.fuzzer')
         # raw
-        #suite.test_2(target_port = 7768, proto = 'L2raw', prepped_fuzzer_file = 'tests/assets/integration_test_2/raw.fuzzer')
+        #suite.test_2(target_port = 7779, proto = 'L2raw', prepped_fuzzer_file = 'tests/assets/integration_test_2/raw.fuzzer')
     except Exception as e:
         print(repr(e))
         traceback.print_exc()
     try: # FUZZ -> HALT -> RESUME FROM LAST_SEED_TRIED -> HALT
-        pass
         #tcp
-        #suite.test_3(target_port= 7767, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_3/tcp.fuzzer')
+        suite.test_3(target_port= 7780, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_3/tcp.fuzzer')
         # udp 
-        #suite.test_3(target_port= 7766, proto = 'udp', prepped_fuzzer_file = 'tests/assets/integration_test_3/udp.fuzzer')
+        #suite.test_3(target_port= 7782, proto = 'udp', prepped_fuzzer_file = 'tests/assets/integration_test_3/udp.fuzzer')
         # ssl
-        #suite.test_3(target_port= 7765, proto = 'ssl', prepped_fuzzer_file = 'tests/assets/integration_test_3/ssl.fuzzer')
+        #suite.test_3(target_port= 7784, proto = 'ssl', prepped_fuzzer_file = 'tests/assets/integration_test_3/ssl.fuzzer')
         # raw
-        #suite.test_3(target_port= 7764, proto = 'L2raw', prepped_fuzzer_file = 'tests/assets/integration_test_3/raw.fuzzer')
+        #suite.test_3(target_port= 7786, proto = 'L2raw', prepped_fuzzer_file = 'tests/assets/integration_test_3/raw.fuzzer')
     except Exception as e:
         print(repr(e))
         traceback.print_exc()

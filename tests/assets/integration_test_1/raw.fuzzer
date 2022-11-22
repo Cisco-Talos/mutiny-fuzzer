@@ -1,28 +1,29 @@
 # Directory containing any custom exception/message/monitor processors
 # This should be either an absolute path or relative to the .fuzzer file
-# If set to 'default', Mutiny will use any processors in the same
+# If set to "default", Mutiny will use any processors in the same
 # folder as the .fuzzer file
 processor_dir default
-# Number of times to retry a test case causing a crash
+# Number of times to retry a test case causing a cras
 failure_threshold 3
 # How long to wait between retrying test cases causing a crash
-failure_timeout 1
+failure_timeout 5
 # How long for recv() to block when waiting on data from server
 receive_timeout 3.0
 # Whether to perform an unfuzzed test run before fuzzing
 should_perform_test_run 1
 # Protocol (udp or tcp)
-proto tcp
+proto L2raw
 # Port number to connect to
-port 7778
+port 7775
 # Port number to connect from
 source_port -1
 # Source IP to connect from
 source_ip 0.0.0.0
-# Last seed tried by mutiny in the previous execution
-last_seed_tried -1
 
 # The actual messages in the conversation
 # Each contains a message to be sent to or from the server, printably-formatted
-outbound 'greetings '
-sub fuzz 'earthlings'
+outbound 'hi'
+inbound 'hello'
+outbound 'magic phrase:'
+sub fuzz 'password'
+inbound 'incorrect magic phrase, try again!'

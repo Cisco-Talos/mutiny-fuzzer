@@ -14,13 +14,13 @@ should_perform_test_run 1
 # Protocol (udp or tcp)
 proto tcp
 # Port number to connect to
-port 7771
+port 7776
 # Port number to connect from
 source_port -1
 # Source IP to connect from
 source_ip 0.0.0.0
 # Last seed tried by mutiny in the previous execution
-last_seed_tried 182
+last_seed_tried 179
 
 # The actual messages in the conversation
 # Each contains a message to be sent to or from the server, printably-formatted

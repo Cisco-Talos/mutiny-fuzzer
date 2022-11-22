@@ -29,17 +29,19 @@ class Mutiny(object):
     def __init__(self, args):
         self.fuzzer_data = FuzzerData()
         # read data in from .fuzzer file
-        fuzzer_file_path = args.prepped_fuzz
-        print("Reading in fuzzer data from %s..." % (fuzzer_file_path))
-        self.fuzzer_data.read_from_file(fuzzer_file_path)
+        self.fuzzer_file_path = args.prepped_fuzz
+        print("Reading in fuzzer data from %s..." % (self.fuzzer_file_path))
+        self.fuzzer_data.read_from_file(self.fuzzer_file_path)
         self.target_host = args.target_host
         self.sleep_time = args.sleep_time
         self.dump_raw = args.dump_raw # test single seed, dump to dumpraw
         self.quiet = args.quiet # dont log the outputs 
+        self.testing = args.testing
         self.log_all = args.log_all if not self.quiet else False # kinda weird/redundant verbosity flags? 
-        self.fuzzer_folder = os.path.abspath(os.path.dirname(fuzzer_file_path))
-        self.output_data_folder_path = os.path.join("%s_%s" % (os.path.splitext(fuzzer_file_path)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
-        self.min_run_number = 0
+        self.fuzzer_folder = os.path.abspath(os.path.dirname(self.fuzzer_file_path))
+        self.output_data_folder_path = os.path.join("%s_%s" % (os.path.splitext(self.fuzzer_file_path)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
+        # retreive the last seed tried by mutiny
+        self.min_run_number = int(self.fuzzer_data.last_seed_tried)
         self.max_run_number = -1
         self.seed_loop = []
 
@@ -105,8 +107,12 @@ class Mutiny(object):
         self.message_processor = proc_director.message_processor()
 
 
-    def fuzz(self, testing=False):
-        iteration = self.min_run_number - 1 if self.fuzzer_data.should_perform_test_run else self.min_run_number
+    def fuzz(self):
+        '''
+        Main fuzzing routine
+
+        '''
+        seed = self.min_run_number if self.fuzzer_data.should_perform_test_run else self.min_run_number + 1
         failure_count = 0
         loop_len = len(self.seed_loop) # if --loop
         is_paused = False
@@ -133,25 +139,25 @@ class Mutiny(object):
                     if self.dump_raw:
                         print("\n\nPerforming single raw dump case: %d" % self.dump_raw)
                         self._perform_run(seed=self.dump_raw)  
-                    elif iteration == self.min_run_number - 1:
+                    elif seed == self.min_run_number - 1:
                         print("\n\nPerforming test run without fuzzing...")
                         self._perform_run(seed=-1 ) 
                     elif loop_len: 
-                        print("\n\nFuzzing with seed %d" % (self.seed_loop[iteration%loop_len]))
-                        self._perform_run(seed=self.seed_loop[iteration%loop_len]) 
+                        print("\n\nFuzzing with seed %d" % (self.seed_loop[seed%loop_len]))
+                        self._perform_run(seed=self.seed_loop[seed%loop_len]) 
                     else:
-                        print("\n\nFuzzing with seed %d" % (iteration))
-                        self._perform_run(seed=iteration) 
+                        print("\n\nFuzzing with seed %d" % (seed))
+                        self._perform_run(seed=seed) 
                     #if --quiet, (logger==None) => AttributeError
                     if self.log_all:
                         try:
-                            self.logger.output_log(iteration, self.fuzzer_data.message_collection, "log_all ")
+                            self.logger.output_log(seed, self.fuzzer_data.message_collection, "log_all ")
                         except AttributeError:
                             pass 
                 except Exception as e:
                     if self.log_all:
                         try:
-                            self.logger.output_log(iteration, self.fuzzer_data.message_collection, "log_all ")
+                            self.logger.output_log(seed, self.fuzzer_data.message_collection, "log_all ")
                         except AttributeError:
                             pass
 
@@ -183,13 +189,13 @@ class Mutiny(object):
                 if failure_count == 0:
                     try:
                         print_success("Mutiny detected a crash")
-                        self.logger.output_log(iteration, self.fuzzer_data.message_collection, str(e))
+                        self.logger.output_log(seed, self.fuzzer_data.message_collection, str(e))
                     except AttributeError:  
                         pass   
 
                 if self.log_all:
                     try:
-                        self.logger.output_log(iteration, self.fuzzer_data.message_collection, "log_all ")
+                        self.logger.output_log(seed, self.fuzzer_data.message_collection, "log_all ")
                     except AttributeError:
                         pass
 
@@ -209,66 +215,52 @@ class Mutiny(object):
 
             except LogAndHaltException as e:
                 if self.logger:
-                    self.logger.output_log(iteration, self.fuzzer_data.message_collection, str(e))
+                    self.logger.output_log(seed, self.fuzzer_data.message_collection, str(e))
                     print_warning("Received LogAndHaltException, logging and halting")
                 else:
                     print_warning("Received LogAndHaltException, halting but not logging (quiet mode)")
-                if testing:
-                    return
-                else:
-                    exit()
+                self.graceful_shutdown(seed)
+                if self.testing: return
 
             except LogLastAndHaltException as e:
                 if self.logger:
-                    if iteration > self.min_run_number:
+                    if seed > self.min_run_number:
                         print_warning("Received LogLastAndHaltException, logging last run and halting")
                         if self.min_run_number == self.max_run_number:
                             #in case only 1 case is run
-                            self.logger.output_last_log(iteration, last_message_collection, str(e))
-                            print("Logged case %d" % iteration)
+                            self.logger.output_last_log(seed, last_message_collection, str(e))
+                            print("Logged case %d" % seed)
                         else:
-                            self.logger.output_last_log(iteration-1, last_message_collection, str(e))
+                            self.logger.output_last_log(seed-1, last_message_collection, str(e))
                     else:
                         print_warning("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
                 else:
                     print_warning("Received LogLastAndHaltException, halting but not logging (quiet mode)")
-                if testing:
-                    return
-                else:
-                    exit()
+                self.graceful_shutdown(seed)
+                if self.testing: return
 
             except HaltException as e:
                 print_warning("Received HaltException, halting the fuzzing campaign")
-                if testing:
-                    return
-                else:
-                    exit()
+                self.graceful_shutdown(seed)
+                if self.testing: return
 
             if was_crash_detected:
                 if failure_count < self.fuzzer_data.failure_threshold:
-                    print_error("Failure %d of %d allowed for seed %d" % (failure_count, self.fuzzer_data.failure_threshold, iteration))
+                    print_error("Failure %d of %d allowed for seed %d" % (failure_count, self.fuzzer_data.failure_threshold, seed))
                     print("The test run didn't complete, continuing after %d seconds..." % (self.fuzzer_data.failure_timeout))
                     time.sleep(self.fuzzer_data.failure_timeout)
                 else:
                     print_warning("Failed %d times, moving to next test." % (failure_count))
                     failure_count = 0
-                    iteration += 1
+                    seed += 1
             else:
-                iteration += 1
+                seed += 1
 
             # Stop if we have a maximum and have hit it
-            if self.max_run_number >= 0 and iteration > self.max_run_number:
-                print_success('Met acceptable fuzzing range, gracefully shutting down...')
-                if testing:
-                    return
-                else:
-                    exit()
-
-            if self.dump_raw:
-                if testing:
-                    return
-                else:
-                    exit()
+            if (self.max_run_number >= 0 and seed > self.max_run_number) or self.dump_raw:
+                print_success('Completed specified fuzzing range, gracefully shutting down...')
+                self.graceful_shutdown(seed)
+                if self.testing: return
 
 
     def _perform_run(self, seed: int = -1):
@@ -309,7 +301,18 @@ class Mutiny(object):
         self.connection.close()
 
     def _receive_fuzz_session_message(self, message_num, message):
-        # Receiving packet from server
+        '''
+        perform fuzzing subroutine for an inbound message:
+        
+        1. retrieve message we would expect for this message_num
+        2. receive data from connection socket
+        3. notify message_processor of the reception of a new message
+        4. log information about message if applicable
+
+        params:
+            - message_num(int): index of message in self.message_collection we are examining
+            - message(bytearray): message we would expect
+        '''
         message_byte_array = message.get_altered_message()
         data = self.connection.receive_packet(len(message_byte_array), self.fuzzer_data.receive_timeout)
         self.message_processor.post_receive_process(data, MessageProcessorExtraParams(message_num, -1, False, [message_byte_array], [data]))
@@ -433,3 +436,15 @@ class Mutiny(object):
         else:
             # If they pass a non-int, allow this to bomb out
             return (int(str_args),int(str_args)) 
+
+    def graceful_shutdown(self, seed):
+        '''
+        performs a graceful shutdown by recording the current seed along with
+        the rest of self.fuzzer's state to the .fuzzer file for resumption on 
+        next run
+        '''
+        with open(self.fuzzer_file_path, 'w') as output_file:
+            self.fuzzer_data.last_seed_tried = seed - 1
+            self.fuzzer_data.write_to_fd(output_file, default_comments=True)
+        #exit()
+

@@ -348,6 +348,7 @@ class FuzzFilePrep(object):
                 self.fuzzer_data.target_port = prompt_int("What port should the fuzzer %s?" % ("connect to"))
 
 
+
     def _write_fuzzer_file(self, auto_gen: bool = None):
         '''
         writes self.fuzzer_data to a new .fuzzer file using prompt_and_output()
