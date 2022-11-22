@@ -112,9 +112,6 @@ def prep(args):
     fuzz_file_prepper.prep()
 
 def fuzz(args):
-    if args.range:
-        print('present')
-        exit()
     #Check for dependency binaries
     if not os.path.exists(RADAMSA):
         sys.exit('Could not find radamsa in %s... did you build it?' % RADAMSA)

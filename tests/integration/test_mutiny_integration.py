@@ -151,8 +151,14 @@ class IntegrationSuite(object):
             - source_ip: 0.0.0.0
 
             Fuzzes for .5 seconds, receives a HaltException from the monitor, then is restarted
-            in order to verify correct resumption from last_seed_tried
+            in order to verify correct resumption as per issue #31
         '''
+        pass
+        '''
+        FIXME: since the feature tested in the following test was scrapped and
+        is in the process of being rewritten, this function will need
+        to be changed to reflect the new var names/architecture
+
         self.total_tests += 1
         #self.block_print() 
         # populate args
@@ -197,6 +203,7 @@ class IntegrationSuite(object):
         self.passed_tests += 1
         self.enable_print()
         shutil.rmtree(log_dir)
+        '''
         
 
     def block_print(self):
@@ -222,7 +229,7 @@ def main():
     try: # SINGLE CRASH -> PAUSE -> RESUME -> FINISH SPECIFIED RANGE
         pass
         #tcp
-        #suite.test_1(target_port= 7772, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_1/tcp.fuzzer')
+        suite.test_1(target_port= 7772, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_1/tcp.fuzzer')
         # udp 
         #suite.test_1(target_port= 7773, proto = 'udp', prepped_fuzzer_file = 'tests/assets/integration_test_1/udp.fuzzer')
         # ssl
@@ -236,7 +243,7 @@ def main():
     try: # SINGLE OUTBOUND LINE -> CRASH -> HALT
         #tcp
         pass
-        #suite.test_2(target_port= 7776, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_2/tcp.fuzzer')
+        suite.test_2(target_port= 7776, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_2/tcp.fuzzer')
         # udp 
         #suite.test_2(target_port= 7777, proto = 'udp', prepped_fuzzer_file = 'tests/assets/integration_test_2/udp.fuzzer')
         # ssl
@@ -248,7 +255,7 @@ def main():
         traceback.print_exc()
     try: # FUZZ -> HALT -> RESUME FROM LAST_SEED_TRIED -> HALT
         #tcp
-        suite.test_3(target_port= 7780, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_3/tcp.fuzzer')
+        #suite.test_3(target_port= 7780, proto = 'tcp', prepped_fuzzer_file = 'tests/assets/integration_test_3/tcp.fuzzer')
         # udp 
         #suite.test_3(target_port= 7782, proto = 'udp', prepped_fuzzer_file = 'tests/assets/integration_test_3/udp.fuzzer')
         # ssl

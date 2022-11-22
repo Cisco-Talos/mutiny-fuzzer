@@ -65,8 +65,6 @@ class FuzzerData(object):
         self.should_perform_test_run = True
         # How long to time out on receive() (seconds)
         self.receive_timeout = 1.0
-        # Last seed tried by the fuzzer in previous execution
-        self.last_seed_tried = -1
         # Dictionary to save comments made to a .fuzzer file.  Only really does anything if 
         # using readFromFile and then writeToFile in the same program
         # (For example, fuzzerconverter)
@@ -162,9 +160,6 @@ class FuzzerData(object):
                     elif args[0] == 'receive_timeout':
                         self.receive_timeout = float(args[1])
                         self._push_comments('receive_timeout')
-                    elif args[0] == 'last_seed_tried':
-                        self.last_seed_tried = args[1]
-                        self._push_comments('last_seed_tried')
                     elif args[0] == 'messages_to_fuzz':
                         print('WARNING: It looks like you\'re using a legacy .fuzzer file with messages_to_fuzz set.  This is now deprecated, so please update to the new format')
                         self.messages_to_fuzz = validate_number_range(args[1], flatten_list=True)
@@ -320,14 +315,7 @@ class FuzzerData(object):
             file_descriptor.write('# Source IP to connect from\n')
         else:
             file_descriptor.write(self._get_comments('source_ip'))
-        file_descriptor.write('source_ip {0}\n'.format(self.source_ip))
-
-        # Last Seed Tried
-        if default_comments:
-            file_descriptor.write('# Last seed tried by mutiny in the previous execution\n')
-        else:
-            file_descriptor.write(self._get_comments('last_seed_tried'))
-        file_descriptor.write('last_seed_tried {0}\n\n'.format(self.last_seed_tried))
+        file_descriptor.write('source_ip {0}\n\n'.format(self.source_ip))
 
         # Messages
         if final_message_num == -1:

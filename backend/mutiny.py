@@ -41,7 +41,7 @@ class Mutiny(object):
         self.fuzzer_folder = os.path.abspath(os.path.dirname(self.fuzzer_file_path))
         self.output_data_folder_path = os.path.join("%s_%s" % (os.path.splitext(self.fuzzer_file_path)[0], "logs"), datetime.datetime.now().strftime("%Y-%m-%d,%H%M%S"))
         # retreive the last seed tried by mutiny
-        self.min_run_number = int(self.fuzzer_data.last_seed_tried)
+        self.min_run_number = 0
         self.max_run_number = -1
         self.seed_loop = []
 
@@ -110,9 +110,8 @@ class Mutiny(object):
     def fuzz(self):
         '''
         Main fuzzing routine
-
         '''
-        seed = self.min_run_number if self.fuzzer_data.should_perform_test_run else self.min_run_number + 1
+        seed = self.min_run_number - 1 if self.fuzzer_data.should_perform_test_run else self.min_run_number 
         failure_count = 0
         loop_len = len(self.seed_loop) # if --loop
         is_paused = False
@@ -219,8 +218,8 @@ class Mutiny(object):
                     print_warning("Received LogAndHaltException, logging and halting")
                 else:
                     print_warning("Received LogAndHaltException, halting but not logging (quiet mode)")
-                self.graceful_shutdown(seed)
                 if self.testing: return
+                else: exit()
 
             except LogLastAndHaltException as e:
                 if self.logger:
@@ -236,13 +235,13 @@ class Mutiny(object):
                         print_warning("Received LogLastAndHaltException, skipping logging (due to last run being a test run) and halting")
                 else:
                     print_warning("Received LogLastAndHaltException, halting but not logging (quiet mode)")
-                self.graceful_shutdown(seed)
                 if self.testing: return
+                else: exit()
 
             except HaltException as e:
                 print_warning("Received HaltException, halting the fuzzing campaign")
-                self.graceful_shutdown(seed)
                 if self.testing: return
+                else: exit()
 
             if was_crash_detected:
                 if failure_count < self.fuzzer_data.failure_threshold:
@@ -259,8 +258,8 @@ class Mutiny(object):
             # Stop if we have a maximum and have hit it
             if (self.max_run_number >= 0 and seed > self.max_run_number) or self.dump_raw:
                 print_success('Completed specified fuzzing range, gracefully shutting down...')
-                self.graceful_shutdown(seed)
                 if self.testing: return
+                else: exit()
 
 
     def _perform_run(self, seed: int = -1):
@@ -437,14 +436,4 @@ class Mutiny(object):
             # If they pass a non-int, allow this to bomb out
             return (int(str_args),int(str_args)) 
 
-    def graceful_shutdown(self, seed):
-        '''
-        performs a graceful shutdown by recording the current seed along with
-        the rest of self.fuzzer's state to the .fuzzer file for resumption on 
-        next run
-        '''
-        with open(self.fuzzer_file_path, 'w') as output_file:
-            self.fuzzer_data.last_seed_tried = seed - 1
-            self.fuzzer_data.write_to_fd(output_file, default_comments=True)
-        #exit()
 
