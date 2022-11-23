@@ -123,7 +123,6 @@ class TestFuzzerConnection(unittest.TestCase):
         conn.close()
     
     def test_FuzzerConnectionInit_tls_ipv4(self):
-        return #FIXME: remove after addressing issue #29
         proto = 'tls'
         mock_if = '127.0.0.1'
         mock_port = 9995
@@ -134,7 +133,9 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread = threading.Thread(target=target.accept_connection)
         listener_thread.start()
         sleep(.5) # avoid race, allow handle_connections to bind and listen
-        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port)
+        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port, testing=True)
+        conn._get_addr()
+        conn._connect_to_tls_socket()
         self.assertEqual(conn.proto, proto)
         self.assertEqual(conn.host, mock_if)
         self.assertEqual(conn.target_port, mock_port)
@@ -150,7 +151,6 @@ class TestFuzzerConnection(unittest.TestCase):
         target.listen_conn.close()
     
     def test_FuzzerConnectionInit_tls_ipv6(self):
-        return #FIXME: remove after addressing issue #29
         proto = 'tls'
         mock_if = '::1'
         mock_port = 9994
@@ -161,7 +161,9 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread = threading.Thread(target=target.accept_connection)
         listener_thread.start()
         sleep(.5) # avoid race, allow handle_connections to bind and listen
-        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port)
+        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port, testing=True)
+        conn._get_addr()
+        conn._connect_to_tls_socket()
         self.assertEqual(conn.proto, proto)
         self.assertEqual(conn.host, mock_if)
         self.assertEqual(conn.target_port, mock_port)
@@ -296,7 +298,6 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(target.incoming_buffer.pop(),data)
 
     def test_send_packet_tls_ipv4(self):
-        return #FIXME: remove after addressing issue #29
         proto = 'tls'
         mock_if = '127.0.0.1'
         mock_port = 9990
@@ -308,7 +309,9 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.start()
         data = bytes('test', 'utf-8')
         sleep(.1)
-        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port)
+        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port, testing=True)
+        conn._get_addr()
+        conn._connect_to_tls_socket()
         listener_thread.join()
         reception_thread = threading.Thread(target=target.receive_packet, args=(len(data),))
         reception_thread.start()
@@ -320,7 +323,6 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(target.incoming_buffer.pop(),data)
 
     def test_send_packet_tls_ipv6(self):
-        return #FIXME: remove after addressing issue #29
         proto = 'tls'
         mock_if = '::1'
         mock_port = 9989
@@ -332,7 +334,9 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.start()
         data = bytes('test', 'utf-8')
         sleep(.1)
-        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port)
+        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port, testing=True)
+        conn._get_addr()
+        conn._connect_to_tls_socket()
         listener_thread.join()
         reception_thread = threading.Thread(target=target.receive_packet, args=(len(data),))
         reception_thread.start()
@@ -393,7 +397,8 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.join()
         reception_thread = threading.Thread(target=self.receive_packet_wrapper, args=(conn, len(data), 3.0))
         reception_thread.start()
-        target.send_packet(data, (mock_if, mock_port))
+        target.addr = (mock_if, mock_port)
+        target.send_packet(data)
         reception_thread.join()
         conn.connection.close()
         target.communication_conn.close()
@@ -417,7 +422,8 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.join()
         reception_thread = threading.Thread(target=self.receive_packet_wrapper, args=(conn, len(data), 3.0))
         reception_thread.start()
-        target.send_packet(data, (mock_if, mock_port))
+        target.addr = (mock_if, mock_port)
+        target.send_packet(data)
         reception_thread.join()
         conn.connection.close()
         target.communication_conn.close()
@@ -440,7 +446,8 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.join()
         reception_thread = threading.Thread(target=self.receive_packet_wrapper, args=(conn, len(data), 3.0))
         reception_thread.start()
-        target.send_packet(data, (src_if, src_port))
+        target.addr = (src_if, src_port)
+        target.send_packet(data)
         reception_thread.join()
         conn.connection.close()
         target.communication_conn.close()
@@ -463,7 +470,8 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.join()
         reception_thread = threading.Thread(target=self.receive_packet_wrapper, args=(conn, len(data), 3.0))
         reception_thread.start()
-        target.send_packet(data, (src_if, src_port))
+        target.addr = (src_if, src_port)
+        target.send_packet(data)
         reception_thread.join()
         conn.connection.close()
         target.communication_conn.close()
@@ -471,7 +479,6 @@ class TestFuzzerConnection(unittest.TestCase):
 
 
     def test_receive_packet_tls_ipv4(self):
-        return #FIXME: remove after addressing issue #29
         proto = 'tls'
         mock_if = '127.0.0.1'
         mock_port = 9984
@@ -483,11 +490,14 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.start()
         data = bytes('test', 'utf-8')
         sleep(.1)
-        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port)
+        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port, testing=True)
+        conn._get_addr()
+        conn._connect_to_tls_socket()
         listener_thread.join()
         reception_thread = threading.Thread(target=self.receive_packet_wrapper, args=(conn, len(data), 3.0))
         reception_thread.start()
-        target.send_packet(data, (src_if, src_port))
+        target.addr =  (src_if, src_port)
+        target.send_packet(data)
         reception_thread.join()
         conn.connection.close()
         target.communication_conn.close()
@@ -495,7 +505,6 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(self.received_data.pop(), data)
 
     def test_receive_packet_tls_ipv6(self):
-        return #FIXME: remove after addressing issue #29
         proto = 'tls'
         mock_if = '::1'
         mock_port = 9983
@@ -507,11 +516,14 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.start()
         data = bytes('test', 'utf-8')
         sleep(.1)
-        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port)
+        conn = FuzzerConnection(proto, mock_if, mock_port, src_if, src_port, testing=True)
+        conn._get_addr()
+        conn._connect_to_tls_socket()
         listener_thread.join()
         reception_thread = threading.Thread(target=self.receive_packet_wrapper, args=(conn, len(data), 3.0))
         reception_thread.start()
-        target.send_packet(data, (src_if, src_port))
+        target.addr = (src_if, src_port)
+        target.send_packet(data)
         reception_thread.join()
         conn.connection.close()
         target.communication_conn.close()
@@ -538,7 +550,8 @@ class TestFuzzerConnection(unittest.TestCase):
         listener_thread.join()
         reception_thread = threading.Thread(target=self.receive_packet_wrapper, args=(conn, len(data), 3.0))
         reception_thread.start()
-        target.send_packet(data, (src_if, src_port))
+        target.addr = (src_if, src_port)
+        target.send_packet(data)
         reception_thread.join()
         conn.connection.close()
         target.commmunication_conn.close()

@@ -60,9 +60,12 @@ class MockTarget(object):
                 pass
             else:
                 ssl._create_default_https_context = _create_unverified_https_context
-            self.listen_conn = ssl.wrap_socket(self.listen_conn)
+            
             self.listen_conn.bind((self.listen_if, self.listen_port))
             self.listen_conn.listen()
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain('./tests/assets/test-server.pem', './tests/assets/test-server.key')
+            self.listen_conn = context.wrap_socket(self.listen_conn, server_side=True)
             self.communication_conn = self.listen_conn.accept()[0]
         elif self.proto == 'udp':
             socket_family = socket.AF_INET if  '.' in self.listen_if else socket.AF_INET6

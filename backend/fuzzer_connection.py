@@ -36,10 +36,11 @@ class FuzzerConnection(object):
         self.source_ip = src_ip
         self.source_port = src_port
         self.addr = None
+        self.testing = testing
         if self.proto != "L2raw" and self.proto != 'tls' and self.proto not in PROTO:
             print_error(f'Unknown protocol: {self.proto}')
             sys.exit(-1)
-        if testing:
+        if self.testing:
             return
 
         # determine format of address to use based on protocol
@@ -121,9 +122,14 @@ class FuzzerConnection(object):
         else:
             # Handle target environment that doesn't support HTTPS verification
             ssl._create_default_https_context = _create_unverified_https_context
-
+        context = ssl.create_default_context()
+        if self.testing:
+            # load self-signed testing certificate
+            context.load_verify_locations('./tests/assets/test-server.pem')
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
         tcp_connection = socket.socket(self.socket_family, socket.SOCK_STREAM)
-        self.connection = ssl.wrap_socket(tcp_connection)
+        self.connection = context.wrap_socket(tcp_connection)
         self._bind_to_interface()
         self.connection.connect(self.addr)
 
