@@ -3,6 +3,7 @@ from backend.fuzzer_data import FuzzerData
 from tests.assets.mock_target import MockTarget
 from backend.menu_functions import print_warning
 import threading
+import ssl
 from time import sleep
 import unittest
 import socket
@@ -144,7 +145,7 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.addr, (mock_if, mock_port))
         self.assertEqual(conn.connection.family, socket.AF_INET)
         self.assertEqual(conn.connection.type, socket.SOCK_STREAM)
-        # TODO: add a check to verify tls is being used
+        self.assertIsInstance(conn.connection, ssl.SSLSocket)
         listener_thread.join()
         conn.close()
         target.communication_conn.close()
@@ -172,7 +173,7 @@ class TestFuzzerConnection(unittest.TestCase):
         self.assertEqual(conn.addr, (mock_if, mock_port))
         self.assertEqual(conn.connection.family, socket.AF_INET6)
         self.assertEqual(conn.connection.type, socket.SOCK_STREAM)
-        #TODO: add a check to verify tls is being used
+        self.assertIsInstance(conn.connection, ssl.SSLSocket)
         listener_thread.join()
         conn.close()
         target.communication_conn.close()
