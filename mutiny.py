@@ -33,19 +33,15 @@
 #
 #------------------------------------------------------------------
 
-
-
 import os
 import signal
 import sys
 import argparse
-from backend.fuzz_file_prep import FuzzFilePrep
 from backend.mutiny import Mutiny
 from backend.menu_functions import print_warning, print_error, print_success
 
 # Path to Radamsa binary
-RADAMSA = os.path.abspath( os.path.join(__file__, '../radamsa/bin/radamsa') )
-TESTING = False
+RADAMSA = os.path.abspath( os.path.join(__file__, '../radamsa-0.6/bin/radamsa') )
 DEBUG = False
 
 # Set up signal handler for CTRL+C
@@ -54,13 +50,14 @@ def sigint_handler(signal: int, frame: object):
     print_warning('\nSIGINT received, stopping\n')
     sys.exit(0)
 
-def parse_fuzz_args(parser):
-    '''
-    parse arguments for fuzzing
-    '''
+    
+def parse_arguments():
+    #TODO: add description/license/ascii art print out??
+    desc =  '======== The Mutiny Fuzzing Framework ==========' 
+    epi = '==' * 24 + '\n'
+    parser = argparse.ArgumentParser(description=desc,epilog=epi)
     parser.add_argument('prepped_fuzz', help='Path to file.fuzzer')
     parser.add_argument('target_host', help='Target to fuzz - hostname/ip address (typical) or outbound interface name (L2raw only)')
-    parser.add_argument('-s', '--sleep_time', help='Time to sleep between fuzz cases (float)', type=float, default=0)
 
     seed_constraint = parser.add_mutually_exclusive_group()
     seed_constraint.add_argument('-r', '--range', help='Run only the specified cases. Acceptable arg formats: [ X | X- | X-Y ], for integers X,Y') 
@@ -71,62 +68,11 @@ def parse_fuzz_args(parser):
     verbosity.add_argument('-q', '--quiet', help='Don\'t log the outputs', action='store_true')
     verbosity.add_argument('--log_all', help='Log all the outputs', action='store_true')
 
+    parser.add_argument('-s', '--sleep_time', help='Time to sleep between fuzz cases (float)', type=float, default=0)
     # stub out calls to input() and related test handling
     parser.add_argument('-t', '--testing', help='For use by test suite to stub calls to input() and perform related test handling', action='store_true')
-    parser.set_defaults(func=fuzz)
-
-def parse_prep_args(parser):
-    '''
-    parse arguments for fuzzer file preparation
-    '''
-    parser.add_argument('pcap_file', help='Pcap/c_array output from wireshark')
-    parser.add_argument('-d','--processor_dir', help = 'Location of custom pcap Message/exception/log/monitor processors if any, see appropriate *processor.py source in ./mutiny_classes/ for implementation details', nargs=1, default=['default'])
-    parser.add_argument('-a', '--dump_ascii', help='Dump the ascii output from packets ', action='store_true', default=False)
-    parser.add_argument('-f', '--force', help='Take all default options', action = 'store_true', default=False) 
-    parser.add_argument('-r', '--raw', help='Pull all layer 2+ data / create .fuzzer for raw sockets', action = 'store_true', default=False) 
-
-    # stub out calls to input() and related test handling
-    parser.add_argument('-t', '--testing', help='For use by test suite to stub calls to input() and perform related test handling', action='store_true')
-    parser.set_defaults(func=prep)
-    
-def parse_arguments():
-    #TODO: add description/license/ascii art print out??
-    desc =  '======== The Mutiny Fuzzing Framework ==========' 
-    epi = '==' * 24 + '\n'
-    parser = argparse.ArgumentParser(description=desc,epilog=epi)
-
-    sub_parsers = parser.add_subparsers(title='subcommands')
-    prep_parser = sub_parsers.add_parser('prep', help='convert a pcap/c_array output into a .fuzzer file') 
-    fuzz_parser = sub_parsers.add_parser('fuzz', help='begin fuzzing using a .fuzzer file')
-
-    parse_prep_args(prep_parser)
-    parse_fuzz_args(fuzz_parser)
 
     return parser.parse_args()
-
-def prep(args):
-    if not os.path.isfile(args.pcap_file):
-        print_error(f'Cannot read input {args.pcap_file}')
-        exit()
-    fuzz_file_prepper = FuzzFilePrep(args)
-    fuzz_file_prepper.prep()
-
-def fuzz(args):
-    #Check for dependency binaries
-    if not os.path.exists(RADAMSA):
-        sys.exit('Could not find radamsa in %s... did you build it?' % RADAMSA)
-    fuzzer = Mutiny(args) 
-    # set the radamasa path
-    fuzzer.radamsa = RADAMSA
-    # set up a sigint handler if not 
-    if not TESTING:
-        signal.signal(signal.SIGINT, signal_handler)
-    # set debug flag on fuzzer
-    fuzzer.debug = DEBUG
-    # load any of the users custom processors
-    fuzzer.import_custom_processors()
-    # begin fuzzing 
-    fuzzer.fuzz()
 
 if __name__ == '__main__':
     # Usage case
@@ -134,7 +80,21 @@ if __name__ == '__main__':
         sys.argv.append('-h')
 
     args = parse_arguments()
-    args.func(args)
 
-    #FIXME: figure out how to have mutiny as default subcommand
+    #Check for dependency binaries
+    if not os.path.exists(RADAMSA):
+        sys.exit('Could not find radamsa in %s... did you build it?' % RADAMSA)
+    # set up a sigint handler only if not testing, since in testing it will be in non-main thread
+    if not args.testing:
+        signal.signal(signal.SIGINT, signal_handler)
+
+    fuzzer = Mutiny(args) 
+    # set the radamasa path
+    fuzzer.radamsa = RADAMSA
+    # set debug flag on fuzzer
+    fuzzer.debug = DEBUG 
+    # load any of the users custom processors
+    fuzzer.import_custom_processors()
+    # begin fuzzing 
+    fuzzer.fuzz()
 
