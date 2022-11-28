@@ -44,7 +44,8 @@ from backend.mutiny import Mutiny
 from backend.menu_functions import print_warning, print_error, print_success
 
 # Path to Radamsa binary
-RADAMSA = os.path.abspath( os.path.join(__file__, '../radamsa/bin/radamsa') )
+# FIXME: add to mutiny config
+RADAMSA = os.path.abspath( os.path.join(__file__, '../radamsa/bin/radamsa-0.6') )
 TESTING = False
 DEBUG = False
 
