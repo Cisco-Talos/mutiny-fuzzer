@@ -1,6 +1,6 @@
 # Directory containing any custom exception/message/monitor processors
 # This should be either an absolute path or relative to the .fuzzer file
-# If set to "default", Mutiny will use any processors in the same
+# If set to 'default', Mutiny will use any processors in the same
 # folder as the .fuzzer file
 processor_dir ./not/default
 # Number of times to retry a test case causing a crash

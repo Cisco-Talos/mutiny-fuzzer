@@ -1,26 +1,26 @@
 import unittest
 import os
 from unittest.mock import patch
-from backend.fuzz_file_prep import FuzzFilePrep
+from util.mutiny_prep import MutinyPrep
 from backend.fuzzer_data import FuzzerData
 from backend.fuzzer_types import Message
 from argparse import Namespace
 
 
 
-class TestFuzzFilePrep(unittest.TestCase):
+class TestMutinyPrep(unittest.TestCase):
     def setUp(self):
-        self.pcap_file_1 = './tests/assets/test_FuzzFilePrep1.pcap'
+        self.pcap_file_1 = './tests/assets/test_MutinyPrep1.pcap'
         self.pcap_file_2 = self.pcap_file_1# FIXME: change to pcap with same ports for both client/server
         self.pcap_file_3 = self.pcap_file_1# FIXME: change to pcap with multiple consecutive inbound/outbounds
-        self.cra_file_1 = './tests/assets/test_FuzzFilePrep1.cra'
+        self.cra_file_1 = './tests/assets/test_MutinyPrep1.cra'
         self.cra_file_2 = self.cra_file_1  # FIXME: change this to a cArray with multiple consecutive outbound/inbounds
-        self.invalid_file = './tests/assets/test_FuzzFilePrep.invalid'
-        self.prompt_and_output_file_1 = './tests/assets/test_FuzzFilePrep1-0.fuzzer'
-        self.prompt_and_output_file_2 = './tests/assets/test_FuzzFilePrep1-0,2-4.fuzzer'
+        self.invalid_file = './tests/assets/test_MutinyPrep.invalid'
+        self.prompt_and_output_file_1 = './tests/assets/test_MutinyPrep1-0.fuzzer'
+        self.prompt_and_output_file_2 = './tests/assets/test_MutinyPrep1-0,2-4.fuzzer'
         self.nonexistent_file = 'non/existent/file'
         args = Namespace(pcap_file=self.pcap_file_1, processor_dir='default', dump_ascii=False, force=True, raw=False)
-        self.prepper = FuzzFilePrep(args)
+        self.prepper = MutinyPrep(args)
 
     def tearDown(self):
         if os.path.exists(self.prompt_and_output_file_1):
@@ -29,9 +29,9 @@ class TestFuzzFilePrep(unittest.TestCase):
             os.remove(self.prompt_and_output_file_2)
 
 
-    def test_FuzzFilePrep_init(self):
+    def test_MutinyPrep_init(self):
         args = Namespace(pcap_file=self.pcap_file_1, processor_dir=['default'], dump_ascii=True, force=True, raw=True)
-        prepper = FuzzFilePrep(args)
+        prepper = MutinyPrep(args)
         self.assertEqual(prepper.last_message_direction, -1)
         self.assertEqual(prepper.fuzzer_data.processor_directory, 'default')
         self.assertTrue(prepper.force_defaults)

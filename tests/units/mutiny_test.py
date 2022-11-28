@@ -17,14 +17,14 @@ class TestMutiny(unittest.TestCase):
         cls.fuzz_file_path_1 = './tests/assets/test_fuzz_data_read.fuzzer'
         cls.log_file_path_1 = cls.fuzz_file_path_1[:-7] + '_logs'
 
-        cls.args = Namespace(prepped_fuzz=cls.fuzz_file_path_1, target_host='127.0.0.1', sleep_time=0, range=None, loop=None, dump_raw=None, quiet=False, log_all=False)
+        cls.args = Namespace(prepped_fuzz=cls.fuzz_file_path_1, target_host='127.0.0.1', sleep_time=0, range=None, loop=None, dump_raw=None, quiet=False, log_all=False, testing=True)
         cls.mutiny = Mutiny(cls.args)
         cls.mutiny.import_custom_processors()
 
     def setUp(self):
         # in case its been changed
         self.mutiny.radamsa = os.path.abspath(os.path.join(__file__,"../../../radamsa-0.6/bin/radamsa"))
-        self.args = Namespace(prepped_fuzz=self.fuzz_file_path_1, target_host='127.0.0.1', sleep_time=0, range=None, loop=None, dump_raw=None, quiet=False, log_all=False)
+        self.args = Namespace(prepped_fuzz=self.fuzz_file_path_1, target_host='127.0.0.1', sleep_time=0, range=None, loop=None, dump_raw=None, quiet=False, log_all=False, testing=True)
 
     def tearDown(self):
         if os.path.exists(self.log_file_path_1):
