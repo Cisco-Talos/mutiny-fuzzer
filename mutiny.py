@@ -42,7 +42,7 @@ from backend.menu_functions import print_warning, print_error, print_success
 
 # Path to Radamsa binary
 # FIXME: add to mutiny config
-RADAMSA = os.path.abspath( os.path.join(__file__, '../radamsa/bin/radamsa-0.6') )
+RADAMSA = os.path.abspath( os.path.join(__file__, '../radamsa-0.6/bin/radamsa') )
 DEBUG = False
 
 # Set up signal handler for CTRL+C
