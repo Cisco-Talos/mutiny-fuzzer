@@ -87,7 +87,7 @@ if __name__ == '__main__':
         sys.exit('Could not find radamsa in %s... did you build it?' % RADAMSA)
     # set up a sigint handler only if not testing, since in testing it will be in non-main thread
     if not args.testing:
-        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGINT, sigint_handler)
 
     fuzzer = Mutiny(args) 
     # set the radamasa path
