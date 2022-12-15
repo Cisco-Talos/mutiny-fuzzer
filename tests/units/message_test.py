@@ -241,31 +241,63 @@ class TestMessage(unittest.TestCase):
         m2.direction = "inbound"
         self.assertFalse(m1 == m2)
 
-
-    # FIXME: add james' serialization tests here
-    def test_serializeByteArray(self):
+    def test__extractMessageComponents(self):
+        #TODO
         pass
-
-
-    def test_deserializeByteArray(self):
-        pass
-
 
     def test_getAlteredSerialized(self):
+        #TODO
         pass
 
+    # FIXME: add james' serialization tests here
+    def test_serialization(self):
+        data = ''
+        for i in range(0,256):
+            data += chr(i)
+        data = bytearray(data, 'utf-8')
+        serialized = Message.serialize_byte_array(data)
+        deserialized = Message.deserialize_byte_array(serialized)
+        self.assertEqual(data, deserialized)
 
-    def test_getSerialized(self):
-        pass
+    def test_serialization_of_message(self):
+        data = ''
+        for i in range(0,256):
+            data += chr(i)
+        data = bytearray(data, 'utf-8')
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        message.set_message_from(Message.Format.Raw, data, False)
+        serialized = message.get_serialized()
+        message.set_from_serialized(serialized)
+        deserialized = message.get_original_message()
+        self.assertEqual(data, deserialized)
 
 
-    def test__extractMessageComponents(self):
-        pass
 
+    def test_serialization_single_quote(self):
+        data = "test'"
+        data = bytearray(data, 'utf-8')
+        serialized = Message.serialize_byte_array(data)
+        deserialized = Message.deserialize_byte_array(serialized)
+        self.assertEqual(data, deserialized)
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        message.set_message_from(Message.Format.Raw, data, False)
+        serialized = message.get_serialized()
+        message.set_from_serialized(serialized)
+        deserialized = message.get_original_message()
+        self.assertEqual(data, deserialized)
 
-    def test_setFromSerialized(self):
-        pass
-
-
-    def test_appendFromSerialized(self):
-        pass
+    def test_serialization_xml_regression(self):
+        data = "<?xml version='1.0' ?><stream:stream to='testwebsite.com' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>"
+        data = bytearray(data, 'utf-8')
+        serialized = Message.serialize_byte_array(data)
+        deserialized = Message.deserialize_byte_array(serialized)
+        self.assertEqual(data, deserialized)
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        message.set_message_from(Message.Format.Raw, data, False)
+        serialized = message.get_serialized()
+        message.set_from_serialized(serialized)
+        deserialized = message.get_original_message()
+        self.assertEqual(data, deserialized)

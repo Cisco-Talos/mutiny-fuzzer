@@ -51,7 +51,7 @@ def main():
     # Create database in-memory, don't retain it
     #database = sqlite3.connect(":memory:")
     # Create database on disk for later analysis
-    database = sqlite3.connect("./results.db", isolation_level="IMMEDIATE")
+    database = sqlite3.connect(":memory:", isolation_level="IMMEDIATE")
     cursor = database.cursor()
     cursor.execute("""CREATE TABLE fuzzer_outputs (output blob, count int)""")
     cursor.execute("""CREATE TABLE seed_tracking (fuzzer_output_index int, seed int)""")
