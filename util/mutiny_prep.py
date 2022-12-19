@@ -143,7 +143,7 @@ class MutinyPrep(object):
                 elif self.fuzzer_data.proto == 'L2raw': 
                     temp_message_data = bytes(input_data[i])
                 else:
-                    print_error(f'Error: Fuzzer data has an unknown protocol {FUZZER_DATA.proto} - should be impossible?')
+                    print_error(f'Error: Fuzzer data has an unknown protocol {self.fuzzer_data.proto} - should be impossible?')
                     exit()
 
                 if new_message_direction == self.last_message_direction:
