@@ -81,10 +81,11 @@ class MockTarget(object):
 
 
     def receive_packet(self, packet_len):
-        if self.communication_conn.type == socket.SOCK_STREAM or self.communication_conn.type == socket.SOCK_DGRAM or self.communication_conn.type == socket.SOCK_RAW:
+        if self.communication_conn.type == socket.SOCK_STREAM  or self.communication_conn.type == socket.SOCK_RAW:
             self.incoming_buffer.append(bytearray(self.communication_conn.recv(packet_len)))
         else:
-            response, self.addr = bytearray(self.communication_conn.recvfrom(packet_len))
+            response, self.addr = self.communication_conn.recvfrom(packet_len)
+            self.incoming_buffer.append(bytearray(response))
 
 
     def send_packet(self, data):

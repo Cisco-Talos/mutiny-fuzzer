@@ -105,10 +105,12 @@ class TestMessage(unittest.TestCase):
         self.message.set_message_from(source_type, message, is_fuzzed)
         self.assertEqual(self.message.subcomponents[0].message, message)
 
-        # Invalid
+        # List
+        source_type = 3
         message = [1,2,3]
-        # TODO: assert failure
-        #self.message.set_message_from(source_type, message, is_fuzzed)
+        with self.assertRaises(RuntimeError, msg='Invalid source_type'):
+            self.message.set_message_from(source_type, message, is_fuzzed)
+
         
         # is_fuzzed=True
         is_fuzzed = True
@@ -241,15 +243,56 @@ class TestMessage(unittest.TestCase):
         m2.direction = "inbound"
         self.assertFalse(m1 == m2)
 
-    def test__extractMessageComponents(self):
-        #TODO
-        pass
+    def test_get_altered_serialized_zero_subcomponents(self):
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        self.assertEqual(message.get_altered_serialized(), 'outbound ERROR: No data in message.\n')
+        
+    def test_get_altered_serialized_one_subcomponent(self):
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        data = bytearray('test', 'utf-8')
+        message.set_message_from(Message.Format.Raw, data, False)
+        expected_output = "outbound {}\n".format(message.serialize_byte_array(message.subcomponents[0].get_altered_byte_array()))
+        self.assertEqual(message.get_altered_serialized(), expected_output)
 
-    def test_getAlteredSerialized(self):
-        #TODO
-        pass
+    def test_get_altered_serialized_one_fuzzed_subcomponent(self):
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        data = bytearray('test', 'utf-8')
+        message.set_message_from(Message.Format.Raw, data, True)
+        expected_output = "fuzz outbound {}\n".format(message.serialize_byte_array(message.subcomponents[0].get_altered_byte_array()))
+        self.assertEqual(message.get_altered_serialized(), expected_output)
+        
+    def test_get_altered_serialized_multiple_subcomponents(self):
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        data = bytearray('test', 'utf-8')
+        message.set_message_from(Message.Format.Raw, data, False)
+        data = bytearray('foo', 'utf-8')
+        message.append_message_from(Message.Format.Raw, data, False)
+        data = bytearray('bar', 'utf-8')
+        message.append_message_from(Message.Format.Raw, data, False)
+        expected_output = "outbound {}\n".format(message.serialize_byte_array(message.subcomponents[0].get_altered_byte_array()))
+        expected_output += "sub {}\n".format(message.serialize_byte_array(message.subcomponents[1].get_altered_byte_array()))
+        expected_output += "sub {}\n".format(message.serialize_byte_array(message.subcomponents[2].get_altered_byte_array()))
 
-    # FIXME: add james' serialization tests here
+        self.assertEqual(message.get_altered_serialized(), expected_output)
+        
+    def test_get_altered_serialized_multiple_fuzzed_subcomponents(self):
+        message = Message()
+        message.direction = Message.Direction.Outbound
+        data = bytearray('test', 'utf-8')
+        message.set_message_from(Message.Format.Raw, data, True)
+        data = bytearray('foo', 'utf-8')
+        message.append_message_from(Message.Format.Raw, data, False)
+        data = bytearray('bar', 'utf-8')
+        message.append_message_from(Message.Format.Raw, data, True)
+        expected_output = "fuzz outbound {}\n".format(message.serialize_byte_array(message.subcomponents[0].get_altered_byte_array()))
+        expected_output += "sub {}\n".format(message.serialize_byte_array(message.subcomponents[1].get_altered_byte_array()))
+        expected_output += "sub fuzz {}\n".format(message.serialize_byte_array(message.subcomponents[2].get_altered_byte_array()))
+        self.assertEqual(message.get_altered_serialized(), expected_output)
+
     def test_serialization(self):
         data = ''
         for i in range(0,256):
@@ -271,8 +314,6 @@ class TestMessage(unittest.TestCase):
         message.set_from_serialized(serialized)
         deserialized = message.get_original_message()
         self.assertEqual(data, deserialized)
-
-
 
     def test_serialization_single_quote(self):
         data = "test'"

@@ -60,9 +60,9 @@ def prompt(question, answers=["y", "n"], default_index=None):
     while answer not in answers:
         print("%s (%s)" % (question, "/".join(answers)))
         if default_index != None:
-            answer = input("Default %s: " % (answers[default_index]))
+            answer = get_input("Default %s: " % (answers[default_index]))
         else:
-            answer = input("No default: ")
+            answer = get_input("No default: ")
         # Pretty up responses with a newline after
         print("")
 
@@ -87,9 +87,9 @@ def prompt_int(question, default_response=None, allow_no=False):
         print("%s" % (question))
         try:
             if default_response:
-                answer = input("Default {0}: ".format(default_response)).strip()
+                answer = get_input("Default {0}: ".format(default_response)).strip()
             else:
-                answer = input("No default: ")
+                answer = get_input("No default: ")
             # Pretty up responses with a newline after
             print("")
             
@@ -113,9 +113,9 @@ def prompt_string(question, default_response="n", validate_func=None):
     ret_str = ""
     while not ret_str or not len(ret_str): 
         if default_response:
-            input_str = input("%s\nDefault %s: " % (question, default_response))
+            input_str = get_input("%s\nDefault %s: " % (question, default_response))
         else:
-            input_str = input("%s\nNo default: " % (question))
+            input_str = get_input("%s\nNo default: " % (question))
             
         # Pretty up responses with a newline after
         print("")
@@ -127,8 +127,16 @@ def prompt_string(question, default_response="n", validate_func=None):
         if validate_func:
             if validate_func(input_str):
                 ret_str = input_str 
+        else:
+            ret_str = input_str
 
     return ret_str 
+
+def get_input(prompt):
+    '''
+    wrapper of input() so it can be stubbed out in tests
+    '''
+    return input(prompt)
 
 def validate_number_range(input_str: str, flatten_list: bool = False):
     '''
@@ -137,7 +145,7 @@ def validate_number_range(input_str: str, flatten_list: bool = False):
     numbers from it.
     e.g. str("1,2,3-6")  => list([1,2,xrange(3,7)])
 
-    If flattenList=True, will return a list of distinct elements
+    If flatten_list=True, will return a list of distinct elements
 
     If given an invalid number string, returns None
     '''
