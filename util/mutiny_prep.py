@@ -1,5 +1,4 @@
 #------------------------------------------------------------------
-
 # Prep traffic log for fuzzing
 #
 # Cisco Confidential
@@ -124,7 +123,7 @@ class MutinyPrep(object):
                         client_port = client_data
                         server_port = server_data
                 elif not self.use_macs and input_data[i].sport not in [client_port, server_port]:
-                    print_error(f'Error: unknown source port {inputData[i].sport} - is the capture filtered to a single stream?')
+                    print_error(f'Error: unknown source port {input_data[i].sport} - is the capture filtered to a single stream?')
                 elif not self.use_macs and input_data[i].dport not in [client_port, server_port]:
                 # TODO: we don't have any sort of checking to make sure a l2raw capture is single stream 
                     print_error(f'Error: unknown destination port {inputData[i].dport} - is the capture filtered to a single stream?')
@@ -158,7 +157,7 @@ class MutinyPrep(object):
                         asked_to_combine_packets = True
                     if is_combining_packets:
                         message.append_message_from(Message.Format.Raw, bytearray(temp_message_data), False)
-                        print_success("\tMessage #%d - Added %d new bytes %s" % (j, len(tempMessageData), message.direction))
+                        print_success("\tMessage #%d - Added %d new bytes %s" % (j, len(temp_message_data), message.direction))
                         continue
                 # Either direction isn't the same or we're not combining packets
                 message = Message()
@@ -167,7 +166,7 @@ class MutinyPrep(object):
                 message.set_message_from(Message.Format.Raw, bytearray(temp_message_data), False)
                 self.fuzzer_data.message_collection.add_message(message)
                 j += 1
-                print_success("\tMessage #%d - Processed %d bytes %s" % (j, len(message.getOriginalMessage()), message.direction))
+                print_success("\tMessage #%d - Processed %d bytes %s" % (j, len(message.get_original_message()), message.direction))
             except AttributeError:
                 # No payload, keep going (different from empty payload)
                 continue
@@ -190,7 +189,7 @@ class MutinyPrep(object):
                 self.fuzzer_data.proto = 'tcp'
                 print('Protocol is TCP')
             else:
-                print_error(f'Error: First packet has protocol {inputData[i].proto} - Did you mean to set "--raw" for Layer 2 fuzzing?')
+                print_error(f'Error: First packet has protocol {input_data[i].proto} - Did you mean to set "--raw" for Layer 2 fuzzing?')
                 exit()
             # is not a raw socket, can grab ports
             # First packet will usually but not always come from client
@@ -331,7 +330,7 @@ class MutinyPrep(object):
             # ask how many times we should repeat a failed test, as in one causing a crash
             self.fuzzer_data.failure_threshold = failure_threshold if failure_threshold else prompt_int("\nHow many times should a test case causing a crash or error be repeated?", default_response=3)
             # timeout between failure retries
-            self.fuzzer_data.failure_timout = failure_timout if failure_timout else prompt_int("When the test case is repeated above, how many seconds should it wait between tests?", default_response=5)
+            self.fuzzer_data.failure_timeout = failure_timeout if failure_timeout else prompt_int("When the test case is repeated above, how many seconds should it wait between tests?", default_response=5)
             if not self.is_raw:
                 # port number to connect on
                 self.fuzzer_data.target_port = port if port else prompt_int("What port should the fuzzer %s?" % ("connect to"), default_response=self.default_port)
