@@ -34,21 +34,40 @@
 #
 #------------------------------------------------------------------
 
+# Print success message in green
+def print_success(message):
+    SUCCESS = "\033[92m"
+    CLEAR = "\033[00m"
+    print(f'{SUCCESS}{message}{CLEAR}')
+
+# Print warnings in yellow
+# Copy pasta of CLEAR just to avoid finding a place to park defines / creating a class
+def print_warning(message):
+    WARNING = "\033[93m"
+    CLEAR = "\033[00m"
+    print(f'{WARNING}{message}{CLEAR}')
+
+# Print errors in red
+def print_error(message):
+    ERROR = "\033[91m"
+    CLEAR = "\033[00m"
+    print(f'{ERROR}{message}{CLEAR}')
+
 # used during the mutiny_prep.py .fuzzer generation
 # asks for and returns a boolean
-def prompt(question, answers=["y", "n"], defaultIndex=None):
+def prompt(question, answers=["y", "n"], default_index=None):
     answer = ""
     while answer not in answers:
-        print "%s (%s)" % (question, "/".join(answers))
-        if defaultIndex != None:
-            answer = raw_input("Default %s: " % (answers[defaultIndex]))
+        print("%s (%s)" % (question, "/".join(answers)))
+        if default_index != None:
+            answer = get_input("Default %s: " % (answers[default_index]))
         else:
-            answer = raw_input("No default: ")
+            answer = get_input("No default: ")
         # Pretty up responses with a newline after
-        print ""
+        print("")
 
-        if defaultIndex != None and answer == "":
-            answer = answers[defaultIndex]
+        if default_index != None and answer == "":
+            answer = answers[default_index]
             break
 
     if len(answers) == 2 and answers[0] == "y" and answers[1] == "n":
@@ -61,20 +80,20 @@ def prompt(question, answers=["y", "n"], defaultIndex=None):
 
 # used during the mutiny_prep.py .fuzzer generation
 # asks for and returns an integer
-def promptInt(question, defaultResponse=None, allowNo=False):
+def prompt_int(question, default_response=None, allow_no=False):
     answer = None
 
     while answer == None:
-        print "%s" % (question)
+        print("%s" % (question))
         try:
-            if defaultResponse:
-                answer = raw_input("Default {0}: ".format(defaultResponse)).strip()
+            if default_response:
+                answer = get_input("Default {0}: ".format(default_response)).strip()
             else:
-                answer = raw_input("No default: ")
+                answer = get_input("No default: ")
             # Pretty up responses with a newline after
-            print ""
+            print("")
             
-            if allowNo and (answer == "n" or answer == ""):
+            if allow_no and (answer == "n" or answer == ""):
                 return None
             else:
                 answer = int(answer)
@@ -82,74 +101,84 @@ def promptInt(question, defaultResponse=None, allowNo=False):
         except ValueError:
             answer = None
 
-        if answer == None and defaultResponse:
-            answer = defaultResponse
+        if answer == None and default_response:
+            answer = default_response
     
     return answer
 
 # Return input given as string if it passes the validationFunction test, else return None.
 # If there is not validationFunc given, only return string.
-# Return default repsonse if empty, the defaultResponse or Ctrl-C are given.
-def promptString(question, defaultResponse="n", validateFunc=None):
-    retStr = ""
-    while not retStr or not len(retStr): 
-        if defaultResponse:
-            inputStr = raw_input("%s\nDefault %s: " % (question, defaultResponse))
+# Return default repsonse if empty, the default_response or Ctrl-C are given.
+def prompt_string(question, default_response="n", validate_func=None):
+    ret_str = ""
+    while not ret_str or not len(ret_str): 
+        if default_response:
+            input_str = get_input("%s\nDefault %s: " % (question, default_response))
         else:
-            inputStr = raw_input("%s\nNo default: " % (question))
+            input_str = get_input("%s\nNo default: " % (question))
             
         # Pretty up responses with a newline after
-        print ""
-        if defaultResponse and (inputStr == defaultResponse or not len(inputStr)):
-            return defaultResponse    
+        print("")
+        if default_response and (input_str == default_response or not len(input_str)):
+            return default_response    
         # If we're looking for a specific format, validate
         # Validate functions must return None on failure of validation,
         # and != None on success
-        if validateFunc:
-            if validateFunc(inputStr):
-                retStr = inputStr 
+        if validate_func:
+            if validate_func(input_str):
+                ret_str = input_str 
+        else:
+            ret_str = input_str
 
-    return retStr 
+    return ret_str 
 
-# Takes a string of numbers, seperated via commas
-# or by hyphens, and generates an appropriate list of
-# numbers from it.
-# e.g. str("1,2,3-6")  => list([1,2,xrange(3,7)])
-#
-# If flattenList=True, will return a list of distinct elements
-#
-# If given an invalid number string, returns None
-def validateNumberRange(inputStr, flattenList=False):
-    retList = []
-    tmpList = filter(None,inputStr.split(','))
+def get_input(prompt):
+    '''
+    wrapper of input() so it can be stubbed out in tests
+    '''
+    return input(prompt)
+
+def validate_number_range(input_str: str, flatten_list: bool = False):
+    '''
+    Takes a string of numbers, seperated via commas
+    or by hyphens, and generates an appropriate list of
+    numbers from it.
+    e.g. str("1,2,3-6")  => list([1,2,xrange(3,7)])
+
+    If flatten_list=True, will return a list of distinct elements
+
+    If given an invalid number string, returns None
+    '''
+    ret_list = []
+    tmp_list = [_f for _f in input_str.split(',') if _f]
 
     # Print msg if invalid chars/typo detected
-    for num in tmpList:
+    for num in tmp_list:
         try:
-            retList.append(int(num))
+            ret_list.append(int(num))
         except ValueError:
             if '-' in num:
-                intRange = num.split('-')                  
+                int_range = num.split('-')                  
                 # Invalid x-y-z
-                if len(intRange) > 2:
-                    print "Invalid range given"
+                if len(int_range) > 2:
+                    print("Invalid range given")
                     return None
                 try:
-                    if not flattenList:
-                        # Append iterator with bounds = intRange
-                        retList.append(xrange(int(intRange[0]),int(intRange[1])+1)) 
+                    if not flatten_list:
+                        # Append iterator with bounds = int_range
+                        ret_list.append(range(int(int_range[0]),int(int_range[1])+1)) 
                     else:
                         # Append individual elements
-                        retList.extend(range(int(intRange[0]),int(intRange[1])+1)) 
+                        ret_list.extend(list(range(int(int_range[0]),int(int_range[1])+1))) 
                 except TypeError:
-                    print "Invalid range given"
+                    print("Invalid range given")
                     return None
             else:
-                print "Invalid number given"
+                print("Invalid number given")
                 return None
     # All elements in the range are valid integers or integer ranges
-    if flattenList:
+    if flatten_list:
         # If list is flattened, every element is an integer
-        retList = sorted(list(set(retList)))
-    return retList 
+        ret_list = sorted(list(set(ret_list)))
+    return ret_list 
 

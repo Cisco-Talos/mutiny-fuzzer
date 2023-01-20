@@ -43,7 +43,7 @@ try:
     libc_loc = find_library("c")
     LIBC = CDLL(libc_loc)
 except:
-    print "Unable to find Libc, exiting!"
+    print("Unable to find Libc, exiting!")
     exit(-1)
 
 
@@ -77,15 +77,15 @@ def server_init():
         serv.bind((bindip,bindport))
         if socket_type != socket.SOCK_DGRAM:
             serv.listen(MAX_SESSIONS)
-        print '[^_^] Listening on %s:%d'%(bindip,bindport)
+        print('[^_^] Listening on %s:%d'%(bindip,bindport))
     except TypeError as e:
         try:
             # this is for unix socket
             serv.bind(bindip)
             serv.listen(MAX_SESSIONS)
         except Exception as e:
-            print e
-            print "Unable to bind to %s,%d!!" % (bindip,bindport)
+            print(e)
+            print("Unable to bind to %s,%d!!" % (bindip,bindport))
             exit(-1)
     
 
@@ -98,7 +98,7 @@ def server_init():
             cli_sock,cli_addr = serv.accept() 
             fuzz_session = threading.Thread(target=client_handler,args=(cli_sock,cli_addr))
         except Exception as e: #UDS error
-            print e
+            print(e)
             cli_sock = serv.accept() 
             fuzz_session = threading.Thread(target=client_handler,args=(cli_sock))
             
@@ -114,8 +114,8 @@ def server_init():
 
 def client_handler(cli_sock,cli_addr=None,udp=False): 
     try:
-        ip = cli_addr[0]
-        port = cli_addr[1] 
+        ip = cli_addr[0].encode()
+        port = cli_addr[1]
         cli_sock.settimeout(TIMEOUT)
         fs = fuzz_session(ip,port,-1,-1,None)
     except:
@@ -139,20 +139,21 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
 # 4 byte - number of test cases 
     if not udp:
         try:
-            msg = cli_sock.recv(4096).split('.')
-            print "asdf"
-        except:
+            print('debug')
+            msg = cli_sock.recv(4096).decode('utf8').split('.')
+            print('MEGA DEBUG' + msg)
+        except Exception as e:
             pass
     else:
         try:
             msg,addr = cli_sock.recvfrom(4096)
             msg = msg.split('.')
-            print "Msg from %s:%d"%addr
+            print("Msg from %s:%d"%addr)
         except Exception as e:
             return
 
     if len(msg) != 2 or len(msg[0]) > 4 or len(msg[1].rstrip()) > 4:
-        print "Invalid session init: %s" % (msg,)
+        print("Invalid session init: %s" % (msg,))
         if udp:
             return
         exit(-1)    
@@ -161,19 +162,19 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
         dirty_input_int = int(msg[0])
         dirty_input_short = int(msg[1])
         if dirty_input_int >= c_uint(-1).value or dirty_input_short >= c_ushort(-1).value:
-            print "Invalid init values given: %d, %d" % (dirty_input_int, dirty_input_short)
+            print("Invalid init values given: %d, %d" % (dirty_input_int, dirty_input_short))
             if udp:
                 return
             exit(-1)
     except:
-        print "Unsavory input given: %s, %s" % (msg[0],msg[1]) 
+        print("Unsavory input given: %s, %s" % (msg[0],msg[1])) 
      
     #populate data to struct
     try:
         fs.pid = c_int(dirty_input_int)
         fs.tc_len = c_short(dirty_input_short)
     except:
-        print "Unable to parse msg: %s" % (msg,)
+        print("Unable to parse msg: %s" % (msg,))
 
     #allocate enough space to hold fuzz_tc structs 
 #! vulnerable line
@@ -181,16 +182,16 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
     LIBC.malloc.restype = c_void_p 
     ret = LIBC.malloc(allocate_space)
 
-    print "Buffer (size: %d) allocated at 0x%x" % (allocate_space.value, ret)
+    print("Buffer (size: %d) allocated at 0x%x" % (allocate_space.value, ret))
 
     if ret == 0:
-        print "Unable to allocate memory! Exiting!"
+        print("Unable to allocate memory! Exiting!")
         if udp:
             return
         exit(-1)
 
     fs.tc = cast(ret,c_void_p)
-    print "fs.tc = 0x%x" % (fs.tc)
+    print("fs.tc = 0x%x" % (fs.tc))
 
     tmp = c_void_p(None)
     tmp_struct = None
@@ -200,12 +201,12 @@ def client_handler(cli_sock,cli_addr=None,udp=False):
         tmp = c_void_p(fs.tc + (i*sizeof(fuzz_tc)))
         tmp_struct = fuzz_tc.from_address(tmp.value)
         tmp_struct.status = i
-        print "status: %d" % (i,)
+        print("status: %d" % (i,))
     
     if udp:
-        cli_sock.sendto("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len),addr) 
+        cli_sock.sendto(("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)).encode(),addr) 
     else:
-        cli_sock.send("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)) 
+        cli_sock.send(("[^.^] Launching %d testcases for pid %d" % (fs.tc_len,fs.tc_len)).encode()) 
     
 if __name__ == '__main__':
     

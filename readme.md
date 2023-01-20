@@ -6,6 +6,9 @@ Blog post here:
 Links to this YouTube video demo:
 * https://www.youtube.com/watch?v=FZyR6MgJCUs
 
+For more features geared towards fuzzing campaigns/feedback/harnesses:
+* https://github.com/Cisco-Talos/mutiny-fuzzer/tree/experiment
+
 # Mutiny Fuzzing Framework
 
 The Mutiny Fuzzing Framework is a network fuzzer that operates by replaying
@@ -167,3 +170,8 @@ previous run and halt.  This is true in most cases, but this behavior can be
 changed to that of any of the exceptions in
 `mutiny_classes/mutiny_exceptions.py` as needed, allowing tailoring of crash
 detection and error correction.
+
+### Testing
+Testing is implemented using python's [unittest](https://docs.python.org/3/library/unittest.html) library. To run the full test suite, you can use the following command from the projects root directory
+
+`python3 -m unittest tests/units/*test.py`

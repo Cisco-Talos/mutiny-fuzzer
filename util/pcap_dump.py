@@ -50,7 +50,7 @@ def main():
                 f.write(packet + "\n")
     else:
         for packet in retbuff:
-            print packet
+            print(packet)
  
 def isSrc(srcInfo,packet):   
     # info_tuple[0] = [Ether].src

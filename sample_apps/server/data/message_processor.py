@@ -22,7 +22,7 @@
 
 import errno
 import socket
-import thread
+import _thread
 from mutiny_classes.mutiny_exceptions import *
 
 # This class is used to provide extra parameters beyond only the message
@@ -110,5 +110,5 @@ class MessageProcessor(object):
         # if message indicates fault, raise LogCrashException("reason")
         if extraParams.messageNumber == 3:
             if len(message) == 0 or (message != bytearray("OK\n") and message != bytearray("INVALID\n")):
-                print message
+                print(message)
                 raise LogCrashException("Server response was not OK or INVALID")
